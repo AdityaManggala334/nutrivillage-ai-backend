@@ -25,3 +25,6 @@ uvicorn==0.54.0
 uvloop==0.23.0
 watchfiles==1.3.0
 websockets==17.2
+
+# Diperlukan PyMySQL untuk autentikasi caching_sha2_password (default MySQL 8).
+cryptography==50.0.2

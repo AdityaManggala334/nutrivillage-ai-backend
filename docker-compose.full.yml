@@ -1,0 +1,86 @@
+# NutriVillage AI — Full stack (MySQL + FastAPI + Next.js) dalam satu perintah.
+#
+# PRASYARAT: clone KEDUA repo secara BERSEBELAHAN dengan nama folder default:
+#
+#   folder-induk/
+#   ├─ nutrivillage-ai-frontend/    <- berisi web-next/
+#   └─ nutrivillage-ai-backend/     <- jalankan compose DARI SINI
+#
+# Build context frontend menunjuk ke ../nutrivillage-ai-frontend/web-next,
+# jadi nama folder di atas WAJIB sama.
+#
+# Usage:
+#   docker compose -f docker-compose.full.yml up --build        # foreground
+#   docker compose -f docker-compose.full.yml up --build -d     # background
+#   docker compose -f docker-compose.full.yml logs -f backend
+#   docker compose -f docker-compose.full.yml down              # stop (data tetap)
+#   docker compose -f docker-compose.full.yml down -v           # stop + HAPUS DATA
+#
+# Setelah jalan:
+#   Web      : http://localhost:3000
+#   API docs : http://localhost:8000/docs
+#   Adminer  : http://localhost:8080  (System: MySQL, Server: db, User: root, pass kosong)
+
+services:
+  db:
+    image: mysql:8
+    container_name: nv-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: nutri_village_ai
+    ports:
+      - "3306:3306"
+    volumes:
+      - nv-db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nv-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "mysql+pymysql://root:@db:3306/nutri_village_ai?charset=utf8mb4"
+      JWT_SECRET: "nutrivillage-dev-secret-change-me"
+      JWT_ALGORITHM: "HS256"
+      ACCESS_TOKEN_EXPIRE_MINUTES: "480"
+      CORS_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ../nutrivillage-ai-frontend/web-next
+      dockerfile: Dockerfile
+    container_name: nv-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NODE_ENV: "production"
+      API_BASE_URL: "http://backend:8000"
+      API_PREFIX: "/api/v1"
+      JWT_SECRET: "nutrivillage-dev-secret-change-me"
+    ports:
+      - "3000:3000"
+
+  adminer:
+    image: adminer:latest
+    container_name: nv-adminer
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - "8080:8080"
+
+volumes:
+  nv-db-data:
