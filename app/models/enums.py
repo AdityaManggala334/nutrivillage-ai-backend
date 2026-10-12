@@ -130,3 +130,8 @@ class ArticleCategory(str, Enum):
     PANGAN_LOKAL = "Pangan Lokal"
     TIPS_HEMAT = "Tips Hemat"
     KESEHATAN = "Kesehatan"
+
+
+class HistoryKind(str, Enum):
+    RECOMMENDATION = "recommendation"
+    MEAL_PLAN = "meal-plan"

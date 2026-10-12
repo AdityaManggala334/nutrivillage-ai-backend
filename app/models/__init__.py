@@ -11,6 +11,7 @@ from app.models.catalog import (
 )
 from app.models.content import Article, FoodSafetyInfo, Notification
 from app.models.family import FamilyMember, FamilyProfile
+from app.models.history import HistoryEntry
 from app.models.planning import (
     Favorite,
     LlmExplanation,
@@ -59,6 +60,8 @@ __all__ = [
     # Keluarga
     "FamilyProfile",
     "FamilyMember",
+    # Riwayat
+    "HistoryEntry",
     # Rekomendasi, planner, belanja
     "Recommendation",
     "RecommendationItem",

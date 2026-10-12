@@ -10,7 +10,7 @@ from app.db.session import Base, engine
 
 # Impor model agar seluruh tabel terdaftar pada Base.metadata.
 from app.models import SppgOfficer, User  # noqa: F401
-from app.routers import auth, master, profile, schools, users
+from app.routers import auth, history, master, profile, recipes, schools, users
 
 
 @asynccontextmanager
@@ -46,6 +46,8 @@ app.include_router(users.router, prefix=settings.api_prefix)
 app.include_router(schools.router, prefix=settings.api_prefix)
 app.include_router(master.router, prefix=settings.api_prefix)
 app.include_router(profile.router, prefix=settings.api_prefix)
+app.include_router(recipes.router, prefix=settings.api_prefix)
+app.include_router(history.router, prefix=settings.api_prefix)
 
 
 @app.get("/health", tags=["meta"])

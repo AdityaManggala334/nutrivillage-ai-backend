@@ -101,6 +101,8 @@ class RecipeIngredientOut(RecipeIngredientIn):
 
 
 class RecipeNutritionIn(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     calories: float = Field(default=0, ge=0)
     protein: float = Field(default=0, ge=0)
     carbohydrates: float = Field(default=0, ge=0)
