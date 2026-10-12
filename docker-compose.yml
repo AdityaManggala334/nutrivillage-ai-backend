@@ -1,0 +1,41 @@
+# NutriVillage AI — layanan pendukung (database)
+#
+# Menyalakan MySQL 8 (dan Adminer untuk inspeksi) agar backend FastAPI
+# dapat berjalan. Sengaja tidak memasukkan backend/frontend ke Docker karena
+# keduanya sudah dijalankan langsung (uvicorn & next).
+#
+# Usage:
+#   docker compose up -d          # nyalakan
+#   docker compose logs -f mysql  # pantau siap
+#   docker compose down           # hentikan (data tetap tersimpan di volume)
+
+services:
+  mysql:
+    image: mysql:8
+    container_name: nv-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: nutri_village_ai
+    ports:
+      - "3306:3306"
+    volumes:
+      - nv-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  adminer:
+    image: adminer:latest
+    container_name: nv-adminer
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+volumes:
+  nv-mysql-data:
