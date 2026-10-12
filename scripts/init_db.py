@@ -25,7 +25,7 @@ from sqlalchemy.engine import make_url  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
-from app.db.session import Base, SessionLocal, engine  # noqa: E402
+from app.db.session import Base, SessionLocal, build_connect_args, engine  # noqa: E402
 from app.models.beneficiary_group import BeneficiaryGroup, BeneficiaryLevel  # noqa: E402
 from app.models.budget_policy import BudgetPolicy  # noqa: E402
 from app.models.school import School  # noqa: E402
@@ -34,6 +34,9 @@ from app.models.user import User, UserRole  # noqa: E402
 
 
 def create_database_if_missing() -> None:
+    if settings.skip_create_database:
+        print("[db] SKIP_CREATE_DATABASE aktif — database dikelola provider.")
+        return
     url = make_url(settings.database_url)
     connection = pymysql.connect(
         host=url.host or "127.0.0.1",
@@ -42,6 +45,7 @@ def create_database_if_missing() -> None:
         password=url.password or "",
         charset="utf8mb4",
         autocommit=True,
+        **build_connect_args(),
     )
     try:
         with connection.cursor() as cursor:
@@ -54,56 +58,81 @@ def create_database_if_missing() -> None:
     print(f"[db] database siap: {url.database}")
 
 
-def seed_users() -> None:
+def _ensure_user(
+    db,
+    *,
+    email: str,
+    name: str,
+    password: str,
+    role: UserRole,
+    officer: dict | None = None,
+) -> None:
+    existing = db.query(User).filter(User.email == email).one_or_none()
+    if existing is not None:
+        print(f"[seed] dilewati (sudah ada): {email}")
+        return
+    user = User(
+        name=name,
+        email=email,
+        password_hash=hash_password(password),
+        role=role,
+    )
+    if officer:
+        user.sppg_officer = SppgOfficer(**officer)
+    db.add(user)
+    db.commit()
+    print(f"[seed] dibuat: {email} ({role.value})")
+
+
+def seed_demo_users() -> None:
     db = SessionLocal()
     try:
-        seeds = [
-            {
-                "email": "keluarga@nutrivillage.id",
-                "name": "Keluarga Madiun",
-                "password": "nutrivillage",
-                "role": UserRole.USER,
+        _ensure_user(
+            db,
+            email="keluarga@nutrivillage.id",
+            name="Keluarga Madiun",
+            password="nutrivillage",
+            role=UserRole.USER,
+        )
+        _ensure_user(
+            db,
+            email="admin@nutrivillage.id",
+            name="Admin NutriVillage",
+            password="admin12345",
+            role=UserRole.ADMIN,
+        )
+        _ensure_user(
+            db,
+            email="sppg@nutrivillage.id",
+            name="Petugas SPPG Madiun",
+            password="sppg12345",
+            role=UserRole.PETUGAS_SPPG,
+            officer={
+                "nip": "197801012006041001",
+                "sppg_unit": "SPPG Madiun Kota",
+                "region": "Kec. Madiun, Kab. Madiun",
+                "position": "Koordinator Gizi",
             },
-            {
-                "email": "admin@nutrivillage.id",
-                "name": "Admin NutriVillage",
-                "password": "admin12345",
-                "role": UserRole.ADMIN,
-            },
-            {
-                "email": "sppg@nutrivillage.id",
-                "name": "Petugas SPPG Madiun",
-                "password": "sppg12345",
-                "role": UserRole.PETUGAS_SPPG,
-                "officer": {
-                    "nip": "197801012006041001",
-                    "sppg_unit": "SPPG Madiun Kota",
-                    "region": "Kec. Madiun, Kab. Madiun",
-                    "position": "Koordinator Gizi",
-                },
-            },
-        ]
+        )
+    finally:
+        db.close()
 
-        for seed in seeds:
-            existing = (
-                db.query(User).filter(User.email == seed["email"]).one_or_none()
-            )
-            if existing is not None:
-                print(f"[seed] dilewati (sudah ada): {seed['email']}")
-                continue
 
-            user = User(
-                name=seed["name"],
-                email=seed["email"],
-                password_hash=hash_password(seed["password"]),
-                role=seed["role"],
-            )
-            officer = seed.get("officer")
-            if officer:
-                user.sppg_officer = SppgOfficer(**officer)
-            db.add(user)
-            db.commit()
-            print(f"[seed] dibuat: {seed['email']} ({seed['role'].value})")
+def seed_bootstrap_admin() -> None:
+    """Akun admin awal dari env (produksi), dibuat hanya bila belum ada."""
+    email = settings.bootstrap_admin_email.strip()
+    password = settings.bootstrap_admin_password.strip()
+    if not email or not password:
+        return
+    db = SessionLocal()
+    try:
+        _ensure_user(
+            db,
+            email=email,
+            name=settings.bootstrap_admin_name.strip() or "Administrator",
+            password=password,
+            role=UserRole.ADMIN,
+        )
     finally:
         db.close()
 
@@ -184,7 +213,7 @@ def seed_demo_school() -> None:
 def ensure_schema() -> None:
     """Migrasi non-destruktif untuk kolom yang ditambahkan setelah rilis awal."""
     statements = [
-        "ALTER TABLE users ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1",
+        "ALTER TABLE users ADD COLUMN is_active TINYINT NOT NULL DEFAULT 1",
     ]
     with engine.connect() as conn:
         for statement in statements:
@@ -201,13 +230,19 @@ def ensure_schema() -> None:
 
 
 def main() -> None:
+    settings.validate_production()
     create_database_if_missing()
     Base.metadata.create_all(bind=engine)
     print("[db] tabel users, sppg_officers, schools, dsb. siap")
     ensure_schema()
-    seed_users()
+    if settings.seed_demo_accounts:
+        seed_demo_users()
+    else:
+        print("[seed] SEED_DEMO_ACCOUNTS nonaktif — akun demo dilewati.")
+    seed_bootstrap_admin()
     seed_budget_policies()
-    seed_demo_school()
+    if settings.seed_demo_accounts:
+        seed_demo_school()
     print("[db] selesai.")
 
 

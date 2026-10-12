@@ -15,6 +15,8 @@ from app.routers import auth, schools, users
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Gagal cepat bila konfigurasi produksi belum aman (JWT_SECRET default, dsb).
+    settings.validate_production()
     # Tabel dibuat otomatis bila belum ada (idempoten). Database dibuat oleh
     # scripts/init_db.py karena CREATE DATABASE tidak bisa via create_all.
     Base.metadata.create_all(bind=engine)
