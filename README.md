@@ -96,8 +96,27 @@ Route Handler Next.js (`src/app/api/auth/*`) berperan sebagai **proxy** ke
 backend ini melalui `src/server/backend-api.ts`. Cookie `nutrivillage_session`
 (JWT) dan `nutrivillage_role` tetap dipakai middleware untuk proteksi rute.
 
+## Skema basis data
+
+Seluruh PDM SKPL V4 Final (Tabel 6.3–6.24) + tabel ekstensi aplikasi web kini
+sudah ada (**30 tabel**), dibuat otomatis oleh `scripts/init_db.py`
+(SQLAlchemy `create_all`). DDL dokumentasi: `db/schema.sql`
+(dihasilkan `scripts/export_schema.py`).
+
+Data katalog awal (bahan, resep, gizi resep, harga, musim, komoditas lokal,
+keamanan pangan, artikel, notifikasi, bobot SAW) di-seed dari dataset aplikasi
+oleh `app/db/seed_catalog.py`.
+
+Contoh tabel: `profiles`, `family_members`, `regions`, `ingredients`,
+`nutrition_facts`, `prices`, `price_verifications`, `price_history`,
+`recipes`, `recipe_ingredients`, `seasonal_availability`, `local_availability`,
+`recommendations`, `recommendation_items`, `shopping_lists`,
+`shopping_list_items`, `scraper_runs`, `llm_explanations`, `system_config`,
+`favorites`, `meal_plans`, `articles`, `notifications`, `food_safety_info`.
+
 ## Fase berikutnya
 
-Tabel PDM lain dari SKPL V4 Final (profiles, family_members, ingredients,
-prices, recipes, recommendations, dst.) dan endpoint per FR (FR-02 s.d. FR-10)
-belum termasuk pada fase ini.
+- Endpoint API per FR (FR-02 s.d. FR-10) untuk mengelola/membaca tabel di atas
+  (saat ini tabel sudah ada; halaman web sebagian masih memakai data mock).
+- Integrasi frontend dari mock → API.
+- Mesin rekomendasi SAW (Python) dengan bobot dari `system_config`.

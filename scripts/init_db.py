@@ -25,6 +25,7 @@ from sqlalchemy.engine import make_url  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
+from app.db.seed_catalog import seed_catalog  # noqa: E402
 from app.db.session import Base, SessionLocal, build_connect_args, engine  # noqa: E402
 from app.models.beneficiary_group import BeneficiaryGroup, BeneficiaryLevel  # noqa: E402
 from app.models.budget_policy import BudgetPolicy  # noqa: E402
@@ -243,6 +244,15 @@ def main() -> None:
     seed_budget_policies()
     if settings.seed_demo_accounts:
         seed_demo_school()
+
+    # Data katalog (bahan, resep, harga, musim, lokal, keamanan pangan, artikel,
+    # notifikasi) — idempoten, aman dijalankan berulang.
+    catalog_db = SessionLocal()
+    try:
+        seed_catalog(catalog_db)
+    finally:
+        catalog_db.close()
+
     print("[db] selesai.")
 
 
