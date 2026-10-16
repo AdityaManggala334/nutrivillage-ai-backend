@@ -38,6 +38,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> AuthSes
     user = User(
         name=payload.name.strip(),
         email=email,
+        phone=payload.phone,
         password_hash=hash_password(payload.password),
         role=payload.role,
     )

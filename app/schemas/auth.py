@@ -45,6 +45,8 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     confirm_password: str | None = None
     role: UserRole = UserRole.USER
+    # Opsional: nomor HP kontak (10-15 digit). Dapat diisi/diubah di halaman Profil.
+    phone: str | None = Field(default=None, max_length=30)
 
     # Field khusus petugas SPPG MBG.
     nip: str | None = Field(default=None, max_length=50)
@@ -56,6 +58,8 @@ class RegisterRequest(BaseModel):
     def validate_registration(self) -> "RegisterRequest":
         if self.role not in (UserRole.USER, UserRole.PETUGAS_SPPG):
             raise ValueError("Peran hanya boleh 'user' atau 'petugas_sppg'.")
+
+        self.phone = _validate_phone(self.phone)
 
         if not any(char.isalpha() for char in self.password) or not any(
             char.isdigit() for char in self.password
