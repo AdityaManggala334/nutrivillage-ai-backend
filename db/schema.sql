@@ -119,6 +119,7 @@ CREATE TABLE users (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
 	name VARCHAR(100) NOT NULL, 
 	email VARCHAR(150) NOT NULL, 
+	phone VARCHAR(30), 
 	password_hash VARCHAR(255) NOT NULL, 
 	`role` ENUM('user','petugas_sppg','admin','guest') NOT NULL, 
 	is_active BOOL NOT NULL DEFAULT '1', 
@@ -127,9 +128,9 @@ CREATE TABLE users (
 	PRIMARY KEY (id)
 );
 
-CREATE INDEX ix_users_role ON users (`role`);
-
 CREATE UNIQUE INDEX ix_users_email ON users (email);
+
+CREATE INDEX ix_users_role ON users (`role`);
 
 CREATE TABLE family_members (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -158,9 +159,26 @@ CREATE TABLE favorites (
 	FOREIGN KEY(recipe_id) REFERENCES recipes (id) ON DELETE CASCADE
 );
 
+CREATE INDEX ix_favorites_user_id ON favorites (user_id);
+
 CREATE INDEX ix_favorites_recipe_id ON favorites (recipe_id);
 
-CREATE INDEX ix_favorites_user_id ON favorites (user_id);
+CREATE TABLE history_entries (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	user_id INTEGER NOT NULL, 
+	kind ENUM('recommendation','meal-plan') NOT NULL, 
+	recipe_id INTEGER, 
+	note VARCHAR(255), 
+	saved_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, 
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, 
+	FOREIGN KEY(recipe_id) REFERENCES recipes (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_history_entries_recipe_id ON history_entries (recipe_id);
+
+CREATE INDEX ix_history_entries_user_id ON history_entries (user_id);
 
 CREATE TABLE local_availability (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -240,11 +258,11 @@ CREATE TABLE prices (
 	FOREIGN KEY(region_id) REFERENCES regions (id) ON DELETE SET NULL
 );
 
-CREATE INDEX ix_prices_lookup ON prices (ingredient_id, region_id, recorded_date);
+CREATE INDEX ix_prices_ingredient_id ON prices (ingredient_id);
 
 CREATE INDEX ix_prices_region_id ON prices (region_id);
 
-CREATE INDEX ix_prices_ingredient_id ON prices (ingredient_id);
+CREATE INDEX ix_prices_lookup ON prices (ingredient_id, region_id, recorded_date);
 
 CREATE TABLE profiles (
 	user_id INTEGER NOT NULL, 
@@ -257,6 +275,7 @@ CREATE TABLE profiles (
 	region_id INTEGER, 
 	preferences JSON NOT NULL, 
 	avoided_ingredients JSON NOT NULL, 
+	notifications_enabled BOOL NOT NULL DEFAULT '1', 
 	onboarded BOOL NOT NULL DEFAULT '0', 
 	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, 
 	PRIMARY KEY (user_id), 
