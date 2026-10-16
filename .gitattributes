@@ -1,0 +1,23 @@
+# Normalisasi akhir baris berkas kerja.
+# Repo selalu menyimpan LF supaya aman dipakai di Linux, Docker, dan Render,
+# serta tidak memicu diff besar hanya karena pengembang memakai Windows.
+* text=auto eol=lf
+
+# Skrip shell WAJIB LF. Bila ter-checkout CRLF, container/Linux akan gagal
+# dengan pesan "/usr/bin/env: 'bash\r': No such file or directory".
+*.sh text eol=lf
+
+# Skrip Windows justru memerlukan CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Aset biner tidak ikut dinormalisasi.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary

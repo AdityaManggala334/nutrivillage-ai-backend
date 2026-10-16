@@ -83,16 +83,61 @@ docker compose up -d          # memakai docker-compose.yml (MySQL + Adminer)
 
 ### 2. Siapkan & jalankan backend
 
+**Linux / macOS**
+
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-python scripts/init_db.py          # buat tabel + akun demo
+python scripts/init_db.py          # buat tabel + data acuan (wilayah, bobot SAW) + akun demo
 uvicorn app.main:app --reload --port 8000
 ```
 
+**Windows (PowerShell / CMD)**
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\activate             # PowerShell: .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+copy .env.example .env
+python scripts\init_db.py
+uvicorn app.main:app --reload --port 8000
+```
+
+Catatan Windows:
+
+- Butuh **Python 3.12** dari python.org — centang **“Add python.exe to PATH”** saat memasang.
+- Jika PowerShell menolak mengaktifkan venv, jalankan sekali:
+  `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
+- `uvloop` **tidak tersedia untuk Windows**; di `requirements.txt` barisnya sudah diberi
+  penanda `; sys_platform != "win32"` sehingga otomatis dilewati (uvicorn tetap berjalan
+  memakai asyncio biasa). Semua paket lain memiliki wheel Windows untuk Python 3.12.
+  Bila pip Anda tetap mengeluh soal `uvloop`, lewati barisnya secara manual:
+  ```powershell
+  Get-Content requirements.txt | Where-Object { $_ -notmatch '^uvloop' } | Set-Content requirements-win.txt
+  pip install -r requirements-win.txt
+  ```
+- Path CA TiDB di `.env` tulis dengan garis miring depan (`C:/Users/Nama/isrgrootx1.pem`)
+  atau tempel isi file PEM-nya — jangan backslash mentah.
+- Bila clone berada di path panjang, aktifkan `git config --system core.longpaths true`.
+- Berkas `*.sh` (mis. `scripts/start.sh`, `docker-entrypoint.sh`) hanya dipakai Render/Docker,
+  jadi tidak perlu dijalankan di Windows.
+
 Health check: <http://127.0.0.1:8000/health>
+
+### 3. Variabel `.env` yang sering ditanya
+
+| Variabel | Default | Keterangan |
+| --- | --- | --- |
+| `DATABASE_URL` | MySQL lokal | Format TiDB: `mysql+pymysql://<user>.<root>:<pass>@<host>:4000/<db>?charset=utf8mb4` |
+| `DATABASE_SSL_CA` | kosong | Isi file PEM (deploy) atau path `.pem` (lokal). Wajib untuk TiDB Cloud |
+| `SKIP_CREATE_DATABASE` | `false` | Set `1` untuk DB terkelola (TiDB Serverless tidak mengizinkan `CREATE DATABASE`) |
+| `SEED_CONTENT` | `false` | `1` = isi katalog contoh (bahan, resep, harga, artikel). **Jangan** `1` di produksi |
+| `RESET_DATA` | `false` | `1` = **hapus seluruh data** saat boot. Hanya untuk mengosongkan DB milik sendiri |
+| `BOOTSTRAP_ADMIN_EMAIL/PASSWORD` | kosong | Bila diisi, admin awal dibuat (hanya jika belum ada) |
+| `JWT_SECRET` | nilai dev | **Harus sama** dengan `JWT_SECRET` di `web-next/.env.local` |
+
 
 ---
 
@@ -120,6 +165,12 @@ Semua di bawah prefix `/api/v1`:
   Pada Docker, nilai sudah diset di `docker-compose.full.yml`.
 - Perubahan kode cukup di-commit & push; untuk update di sisi pengguna:
   `git pull && docker compose -f docker-compose.full.yml up --build`.
-- Fitur yang sudah **tersimpan permanen di MySQL**: akun/login, pengguna (admin),
-  sekolah + kelompok penerima manfaat, kebijakan anggaran. Fitur lain (resep,
-  rekomendasi, meal planner, shopping list) masih in-memory/mock.
+- Semua data aplikasi tersimpan di database: akun/login (`users`, `sppg_officers`),
+  profil keluarga (`profiles`, `family_members`), katalog (`ingredients`, `recipes`,
+  `recipe_ingredients`, `nutrition_facts`, `prices`, `seasonal_availability`,
+  `local_availability`), konten (`articles`, `notifications`, `food_safety_info`),
+  riwayat & favorit (`history_entries`, `favorites`), serta meal planner & daftar
+  belanja (`meal_plans`, `shopping_lists`, `shopping_list_items`).
+- Yang **tidak** diambil dari database: algoritma Recommendation Engine (SAW) yang
+  menghitung skor saat request. Agar ada bahan uji, set `SEED_CONTENT=1` lalu jalankan
+  `python scripts/init_db.py` (kembalikan ke `0` setelahnya).
