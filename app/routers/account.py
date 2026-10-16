@@ -70,6 +70,11 @@ def update_account(
     if "name" in data:
         user.name = (data["name"] or "").strip()
 
+    if "phone" in data:
+        # Sudah divalidasi & dinormalkan oleh AccountUpdateRequest
+        # (opsional, 10-15 digit); nilai kosong berarti menghapus nomor.
+        user.phone = data["phone"] or None
+
     if "notifications_enabled" in data:
         profile = _get_profile(db, user)
         profile.notifications_enabled = bool(data["notifications_enabled"])
