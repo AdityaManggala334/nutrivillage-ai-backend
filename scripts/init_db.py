@@ -25,7 +25,7 @@ from sqlalchemy.engine import make_url  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
-from app.db.seed_catalog import seed_catalog  # noqa: E402
+from app.db.seed_catalog import seed_catalog, seed_reference  # noqa: E402
 from app.db.session import Base, SessionLocal, build_connect_args, engine  # noqa: E402
 from app.models.beneficiary_group import BeneficiaryGroup, BeneficiaryLevel  # noqa: E402
 from app.models.budget_policy import BudgetPolicy  # noqa: E402
@@ -215,6 +215,9 @@ def ensure_schema() -> None:
     """Migrasi non-destruktif untuk kolom yang ditambahkan setelah rilis awal."""
     statements = [
         "ALTER TABLE users ADD COLUMN is_active TINYINT NOT NULL DEFAULT 1",
+        # Halaman Profil: nomor HP kontak + sakelar notifikasi (FR-21).
+        "ALTER TABLE users ADD COLUMN phone VARCHAR(30) NULL",
+        "ALTER TABLE profiles ADD COLUMN notifications_enabled TINYINT NOT NULL DEFAULT 1",
     ]
     with engine.connect() as conn:
         for statement in statements:
@@ -227,7 +230,7 @@ def ensure_schema() -> None:
                 if "1060" in message or "duplicate column" in message:
                     continue
                 raise
-    print("[db] skema terbaru terverifikasi (is_active)")
+    print("[db] skema terbaru terverifikasi (is_active, phone, notifications_enabled)")
 
 
 def main() -> None:
@@ -245,13 +248,35 @@ def main() -> None:
     if settings.seed_demo_accounts:
         seed_demo_school()
 
-    # Data katalog (bahan, resep, harga, musim, lokal, keamanan pangan, artikel,
-    # notifikasi) — idempoten, aman dijalankan berulang.
+    # Data acuan (wilayah + bobot SAW) selalu disiapkan karena tidak punya
+    # form admin.
     catalog_db = SessionLocal()
     try:
-        seed_catalog(catalog_db)
+        seed_reference(catalog_db)
+        if settings.seed_content:
+            seed_catalog(catalog_db)
+        else:
+            print(
+                "[seed] SEED_CONTENT nonaktif — data katalog/konten dilewati. "
+                "Isi manual lewat panel admin (atau jalankan reset/isi ulang)."
+            )
     finally:
         catalog_db.close()
+
+    if settings.reset_data:
+        print(
+            "\n"
+            "============================================================\n"
+            "[reset] RESET_DATA aktif — SELURUH DATA DIHAPUS.\n"
+            "Segera kembalikan env RESET_DATA=0 di Render!\n"
+            "============================================================"
+        )
+        import app.models  # noqa: F401  # daftarkan seluruh tabel ke metadata
+
+        from app.db.reset import reset_data, table_names_to_clear
+
+        tables = table_names_to_clear(t.name for t in Base.metadata.sorted_tables)
+        reset_data(engine, list(reversed(tables)), assume_yes=True)
 
     print("[db] selesai.")
 

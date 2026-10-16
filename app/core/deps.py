@@ -63,3 +63,24 @@ def require_roles(*roles: UserRole) -> Callable[[User], User]:
         return user
 
     return dependency
+
+
+def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """Variasi longgar: mengembalikan None bila tanpa/bermasalah (publik + login).
+
+    Dipakai endpoint publik yang isinya disesuaikan per pengguna, misalnya
+    daftar notifikasi (global) untuk tamu dan personal untuk pengguna login.
+    """
+    if credentials is None:
+        return None
+    payload = decode_access_token(credentials.credentials)
+    if payload is None:
+        return None
+    try:
+        user_id = int(payload["sub"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return db.get(User, user_id)

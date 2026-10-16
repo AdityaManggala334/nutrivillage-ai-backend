@@ -38,6 +38,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(
         String(150), nullable=False, unique=True, index=True
     )
+    # Ekstensi website: nomor telepon kontak pengguna (opsional).
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(
         SAEnum(

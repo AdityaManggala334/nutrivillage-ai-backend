@@ -10,7 +10,18 @@ from app.db.session import Base, engine
 
 # Impor model agar seluruh tabel terdaftar pada Base.metadata.
 from app.models import SppgOfficer, User  # noqa: F401
-from app.routers import auth, history, master, profile, recipes, schools, users
+from app.routers import (
+    account,
+    auth,
+    content,
+    history,
+    market,
+    master,
+    profile,
+    recipes,
+    schools,
+    users,
+)
 
 
 @asynccontextmanager
@@ -42,9 +53,12 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix=settings.api_prefix)
+app.include_router(account.router, prefix=settings.api_prefix)
 app.include_router(users.router, prefix=settings.api_prefix)
 app.include_router(schools.router, prefix=settings.api_prefix)
 app.include_router(master.router, prefix=settings.api_prefix)
+app.include_router(market.router, prefix=settings.api_prefix)
+app.include_router(content.router, prefix=settings.api_prefix)
 app.include_router(profile.router, prefix=settings.api_prefix)
 app.include_router(recipes.router, prefix=settings.api_prefix)
 app.include_router(history.router, prefix=settings.api_prefix)

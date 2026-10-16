@@ -52,6 +52,10 @@ class FamilyProfile(Base):
     )
     preferences: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     avoided_ingredients: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Ekstensi website: sakelar notifikasi pengguna (FR-21).
+    notifications_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="1"
+    )
     onboarded: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="0"
     )

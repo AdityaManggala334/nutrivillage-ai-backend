@@ -20,6 +20,9 @@ services:
         value: "1"
       - key: SEED_DEMO_ACCOUNTS
         value: "0"
+      # Data katalog/konten contoh: OFF di produksi (diisi manual lewat admin).
+      - key: SEED_CONTENT
+        value: "0"
       - key: JWT_ALGORITHM
         value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES

@@ -539,3 +539,15 @@ def seed_catalog(db: Session) -> None:
     seed_notifications(db)
     seed_scraper_runs(db)
     print("[seed] katalog (bahan, resep, harga, musim, lokal, konten) siap")
+
+
+def seed_reference(db: Session) -> None:
+    """Data acuan yang selalu dibutuhkan aplikasi (bukan konten contoh).
+
+    - `regions`  : daftar wilayah. Dipakai dropdown & CRUD komoditas lokal.
+    - `system_config` : bobot skoring SAW untuk mesin rekomendasi.
+    Admin tidak menyediakan form untuk keduanya, sehingga tetap disiapkan.
+    """
+    seed_regions(db)
+    seed_system_config(db)
+    print("[seed] data acuan siap (wilayah + konfigurasi sistem/bobot SAW)")

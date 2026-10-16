@@ -45,6 +45,15 @@ class Settings(BaseSettings):
     # Seed akun demo publik. WAJIB false di produksi (default true untuk dev).
     seed_demo_accounts: bool = True
 
+    # Seed data katalog & konten contoh (bahan, resep, harga, artikel, dst.).
+    # Produksi memakai default False — data diisi manual lewat panel admin.
+    seed_content: bool = False
+
+    # SAKLAR BERBAHAYA: mengosongkan seluruh data aplikasi saat startup
+    # (kecuali akun admin, system_config, regions, budget_policies).
+    # Selalu kembalikan ke False setelah dipakai — lihat DEPLOY.md.
+    reset_data: bool = False
+
     # Akun admin awal (dipakai saat produksi). Dibuat hanya jika belum ada.
     bootstrap_admin_email: str = ""
     bootstrap_admin_password: str = ""
