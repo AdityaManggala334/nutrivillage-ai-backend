@@ -241,7 +241,10 @@ def check_health() -> dict[str, object]:
         timeout = min(settings.llm_timeout_seconds, 10.0)
         with urllib.request.urlopen(request, timeout=timeout) as response:
             body = json.loads(response.read().decode("utf-8"))
-        raw_models = body.get("data", []) if isinstance(body, dict) else []
+        raw_models = body.get("data") if isinstance(body, dict) else None
+        if not isinstance(raw_models, list):
+            # Ollama mengembalikan `data: null` saat belum ada model terunduh.
+            raw_models = []
         models = [
             str(item.get("id"))
             for item in raw_models
