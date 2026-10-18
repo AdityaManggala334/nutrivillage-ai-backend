@@ -59,6 +59,20 @@ class Settings(BaseSettings):
     bootstrap_admin_password: str = ""
     bootstrap_admin_name: str = "Administrator"
 
+    # --- Integrasi LLM (penjelasan menu) -----------------------------------
+    # Endpoint OpenAI-compatible. Kosong = fitur nonaktif (endpoint memakai
+    # teks fallback sehingga aplikasi tetap berjalan).
+    #   Ollama (Docker)        : http://ollama:11434/v1
+    #   Ollama (host)          : http://host.docker.internal:11434/v1
+    #   Grok / xAI             : https://api.x.ai/v1
+    #   Gemini (OpenAI-compat) : https://generativelanguage.googleapis.com/v1beta/openai
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_model: str = "llama3.2:1b"
+    llm_timeout_seconds: float = 60.0
+    # True = POST /ai/explain wajib login (disarankan saat memakai API cloud).
+    llm_require_auth: bool = False
+
     @property
     def is_production(self) -> bool:
         return self.environment.strip().lower() in {"production", "prod"}

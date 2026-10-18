@@ -1,8 +1,12 @@
+# Konteks build Docker.
+# Catatan: pola di .dockerignore TIDAK rekursif seperti .gitignore, jadi
+# pembersihan berkas di subfolder memakai awalan **/.
+
 .venv/
 venv/
-__pycache__/
-*.py[cod]
-*.egg-info/
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
 
 # Rahasia & data lokal jangan masuk image.
 .env

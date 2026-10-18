@@ -12,6 +12,7 @@ from app.db.session import Base, engine
 from app.models import SppgOfficer, User  # noqa: F401
 from app.routers import (
     account,
+    ai,
     auth,
     content,
     history,
@@ -64,6 +65,7 @@ app.include_router(profile.router, prefix=settings.api_prefix)
 app.include_router(recipes.router, prefix=settings.api_prefix)
 app.include_router(history.router, prefix=settings.api_prefix)
 app.include_router(planning.router, prefix=settings.api_prefix)
+app.include_router(ai.router, prefix=settings.api_prefix)
 
 
 @app.get("/health", tags=["meta"])

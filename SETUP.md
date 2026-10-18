@@ -158,6 +158,33 @@ Semua di bawah prefix `/api/v1`:
 | GET/PATCH/DELETE | `/schools/{id}` | Detail / ubah / hapus sekolah |
 | GET/POST | `/schools/{id}/groups` | Kelompok penerima manfaat |
 | GET | `/budget-policies` | Kebijakan anggaran |
+| GET | `/ai/health` | Status LLM (Ollama/cloud) untuk penjelasan menu |
+| POST | `/ai/explain` | Penjelasan menu via LLM (fallback bila LLM mati) |
+
+## Integrasi LLM (penjelasan menu)
+
+`app/services/llm.py` memanggil endpoint **OpenAI-compatible**, jadi satu kode
+dipakai untuk LLM lokal maupun API cloud — cukup ganti environment:
+
+| Penyedia | `LLM_BASE_URL` | `LLM_API_KEY` | Contoh `LLM_MODEL` |
+| --- | --- | --- | --- |
+| Ollama (Docker) | `http://ollama:11434/v1` | kosong | `llama3.2:1b` |
+| Ollama (host) | `http://host.docker.internal:11434/v1` | kosong | `llama3.2:1b` |
+| Grok / xAI | `https://api.x.ai/v1` | kunci xAI | `grok-3` / `grok-4` |
+| Gemini (OpenAI-compat) | `https://generativelanguage.googleapis.com/v1beta/openai` | kunci Gemini | `gemini-2.5-flash` |
+
+- `LLM_BASE_URL` kosong → fitur nonaktif, endpoint membalas teks **fallback**
+  (`"source": "fallback"`) sehingga aplikasi tetap jalan.
+- Setiap penjelasan disimpan ke tabel `llm_explanations` (`model` mencatat model
+  yang dipakai) bila `save: true`.
+- `LLM_REQUIRE_AUTH=true` mewajibkan token login untuk `POST /ai/explain`
+  (disarankan bila memakai API berbayar).
+- Contoh cepat (Ollama lokal):
+  ```bash
+  curl -s localhost:8000/api/v1/ai/health
+  curl -s -X POST localhost:8000/api/v1/ai/explain -H 'Content-Type: application/json' \
+    -d '{"recipe_name":"Nasi Pecel","calories":420,"protein":18,"estimated_cost":9500,"budget":15000}'
+  ```
 
 ## Catatan
 
