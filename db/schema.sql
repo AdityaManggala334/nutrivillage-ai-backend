@@ -128,9 +128,9 @@ CREATE TABLE users (
 	PRIMARY KEY (id)
 );
 
-CREATE UNIQUE INDEX ix_users_email ON users (email);
-
 CREATE INDEX ix_users_role ON users (`role`);
+
+CREATE UNIQUE INDEX ix_users_email ON users (email);
 
 CREATE TABLE family_members (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -248,7 +248,7 @@ CREATE TABLE prices (
 	region_id INTEGER, 
 	price NUMERIC(12, 2) NOT NULL, 
 	unit VARCHAR(20) NOT NULL DEFAULT 'kg', 
-	recorded_date DATE NOT NULL DEFAULT CURRENT_DATE, 
+	recorded_date DATE NOT NULL, 
 	source_type ENUM('scraper','manual') NOT NULL, 
 	source VARCHAR(150) NOT NULL, 
 	status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending', 
@@ -258,11 +258,11 @@ CREATE TABLE prices (
 	FOREIGN KEY(region_id) REFERENCES regions (id) ON DELETE SET NULL
 );
 
+CREATE INDEX ix_prices_lookup ON prices (ingredient_id, region_id, recorded_date);
+
 CREATE INDEX ix_prices_ingredient_id ON prices (ingredient_id);
 
 CREATE INDEX ix_prices_region_id ON prices (region_id);
-
-CREATE INDEX ix_prices_lookup ON prices (ingredient_id, region_id, recorded_date);
 
 CREATE TABLE profiles (
 	user_id INTEGER NOT NULL, 
@@ -299,9 +299,9 @@ CREATE TABLE recipe_ingredients (
 	FOREIGN KEY(ingredient_id) REFERENCES ingredients (id) ON DELETE SET NULL
 );
 
-CREATE INDEX ix_recipe_ingredients_ingredient_id ON recipe_ingredients (ingredient_id);
-
 CREATE INDEX ix_recipe_ingredients_recipe_id ON recipe_ingredients (recipe_id);
+
+CREATE INDEX ix_recipe_ingredients_ingredient_id ON recipe_ingredients (ingredient_id);
 
 CREATE TABLE recipe_nutrition (
 	recipe_id INTEGER NOT NULL, 
@@ -444,9 +444,9 @@ CREATE TABLE schools (
 	FOREIGN KEY(sppg_officer_id) REFERENCES sppg_officers (id) ON DELETE CASCADE
 );
 
-CREATE INDEX ix_schools_npsn ON schools (npsn);
-
 CREATE INDEX ix_schools_sppg_officer_id ON schools (sppg_officer_id);
+
+CREATE INDEX ix_schools_npsn ON schools (npsn);
 
 CREATE TABLE shopping_lists (
 	id INTEGER NOT NULL AUTO_INCREMENT, 

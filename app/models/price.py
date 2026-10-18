@@ -49,9 +49,7 @@ class Price(Base):
     )
     price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
     unit: Mapped[str] = mapped_column(String(20), nullable=False, server_default="kg")
-    recorded_date: Mapped[date] = mapped_column(
-        Date, nullable=False, server_default=func.current_date()
-    )
+    recorded_date: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
     source_type: Mapped[PriceSourceType] = mapped_column(
         enum_column(PriceSourceType, "price_source_type"), nullable=False
     )
