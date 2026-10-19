@@ -84,7 +84,13 @@ def _models_url() -> str:
 
 
 def _headers() -> dict[str, str]:
-    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        # Sebagian penyedia (mis. Groq di balik Cloudflare) menolak
+        # User-Agent bawaan Python-urllib dengan 403 Forbidden.
+        "User-Agent": "NutriVillageAI/1.0",
+    }
     if settings.llm_api_key.strip():
         headers["Authorization"] = f"Bearer {settings.llm_api_key.strip()}"
     return headers
