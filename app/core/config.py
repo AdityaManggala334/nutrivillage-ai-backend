@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
     llm_api_key: str = ""
     llm_model: str = "llama3.2:1b"
-    llm_timeout_seconds: float = 60.0
+    llm_timeout_seconds: float = 180.0
     # True = POST /ai/explain wajib login (disarankan saat memakai API cloud).
     llm_require_auth: bool = False
 

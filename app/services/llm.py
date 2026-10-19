@@ -190,7 +190,7 @@ def generate_explanation(context: MenuContext) -> LlmResult:
             {"role": "user", "content": _prompt(context)},
         ],
         "temperature": 0.3,
-        "max_tokens": 180,
+        "max_tokens": 120,
         "stream": False,
     }
     request = urllib.request.Request(
