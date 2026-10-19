@@ -170,6 +170,7 @@ dipakai untuk LLM lokal maupun API cloud — cukup ganti environment:
 | --- | --- | --- | --- |
 | Ollama (Docker) | `http://ollama:11434/v1` | kosong | `llama3.2:1b` |
 | Ollama (host) | `http://host.docker.internal:11434/v1` | kosong | `llama3.2:1b` |
+| Groq Cloud | `https://api.groq.com/openai/v1` | kunci `gsk_...` | `qwen/qwen3.8-27b` |
 | Grok / xAI | `https://api.x.ai/v1` | kunci xAI | `grok-3` / `grok-4` |
 | Gemini (OpenAI-compat) | `https://generativelanguage.googleapis.com/v1beta/openai` | kunci Gemini | `gemini-2.5-flash` |
 
