@@ -15,6 +15,7 @@ class FamilyMemberIn(BaseModel):
     age_group: AgeGroup | None = None
     gender: Gender | None = None
     weight_kg: float = Field(gt=0, le=250)
+    height_cm: float | None = Field(default=None, ge=50, le=250)
     activity_level: ActivityLevel = ActivityLevel.SEDANG
     allergies: list[str] = Field(default_factory=list)
 
@@ -28,6 +29,7 @@ class FamilyMemberOut(BaseModel):
     age_group: AgeGroup | None = None
     gender: Gender | None = None
     weight_kg: float
+    height_cm: float | None = None
     activity_level: ActivityLevel
     allergies: list[str] = Field(default_factory=list)
 
@@ -37,6 +39,8 @@ class FamilyProfileIn(BaseModel):
     region: str = Field(min_length=1, max_length=100)
     preferences: list[str] = Field(default_factory=list)
     avoided_ingredients: list[str] = Field(default_factory=list)
+    meals_per_day: int = Field(default=3, ge=1, le=5)
+    include_susu: bool = True
     onboarded: bool = True
     members: list[FamilyMemberIn] = Field(min_length=1)
 
@@ -47,6 +51,8 @@ class FamilyProfileOut(BaseModel):
     region: str
     preferences: list[str]
     avoided_ingredients: list[str]
+    meals_per_day: int = 3
+    include_susu: bool = True
     onboarded: bool
     family_count: int
     members: list[FamilyMemberOut]

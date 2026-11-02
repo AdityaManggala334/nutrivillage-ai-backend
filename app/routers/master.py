@@ -6,7 +6,10 @@ Semua endpoint dilindungi RBAC admin.
 
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_roles
@@ -18,10 +21,15 @@ from app.models.catalog import (
     Region,
     SeasonalAvailability,
 )
+from app.models.content import FoodSafetyInfo
+from app.models.enums import PriceSourceType, PriceStatus
+from app.models.price import Price
 from app.models.recipe import Recipe, RecipeIngredient, RecipeNutrition
 from app.models.user import User, UserRole
 from app.schemas.master import (
     IngredientCreate,
+    NutritionGridRow,
+    NutritionGridUpdate,
     IngredientOut,
     IngredientUpdate,
     LocalCreate,
@@ -62,8 +70,24 @@ def list_regions(db: Session = Depends(get_db), _: User = AdminDep) -> list[Regi
 # Bahan pangan
 # --------------------------------------------------------------------------
 @router.get("/ingredients", response_model=list[IngredientOut])
-def list_ingredients(db: Session = Depends(get_db), _: User = AdminDep) -> list[Ingredient]:
-    return db.query(Ingredient).order_by(Ingredient.name).all()
+def list_ingredients(db: Session = Depends(get_db), _: User = AdminDep) -> list[IngredientOut]:
+    items = db.query(Ingredient).order_by(Ingredient.name).all()
+    # Satu query agregat untuk seluruh bahan, bukan satu query per baris.
+    counts = dict(
+        db.query(
+            RecipeIngredient.ingredient_id,
+            func.count(func.distinct(RecipeIngredient.recipe_id)),
+        )
+        .filter(RecipeIngredient.ingredient_id.isnot(None))
+        .group_by(RecipeIngredient.ingredient_id)
+        .all()
+    )
+    hasil = []
+    for item in items:
+        row = IngredientOut.model_validate(item)
+        row.used_in_menus = counts.get(item.id, 0)
+        hasil.append(row)
+    return hasil
 
 
 @router.post("/ingredients", response_model=IngredientOut, status_code=status.HTTP_201_CREATED)
@@ -95,6 +119,20 @@ def update_ingredient(
 @router.delete("/ingredients/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_ingredient(item_id: int, db: Session = Depends(get_db), _: User = AdminDep) -> None:
     item = _get_or_404(db, Ingredient, item_id, "Bahan")
+    dipakai = (
+        db.query(func.count(func.distinct(RecipeIngredient.recipe_id)))
+        .filter(RecipeIngredient.ingredient_id == item_id)
+        .scalar()
+        or 0
+    )
+    if dipakai > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Bahan dipakai di {dipakai} menu. Hapus bahan ini dari komposisi "
+                "menu terlebih dahulu sebelum menghapusnya."
+            ),
+        )
     db.delete(item)
     db.commit()
 
@@ -147,15 +185,35 @@ def delete_nutrition(ingredient_id: int, db: Session = Depends(get_db), _: User 
 # Menu / resep
 # --------------------------------------------------------------------------
 def _replace_recipe_children(db: Session, recipe: Recipe, payload: RecipeUpdate | RecipeCreate) -> None:
-    data = payload.model_dump(exclude_unset=True, exclude={"ingredients", "nutrition"})
+    data = payload.model_dump(
+        exclude_unset=True,
+        exclude={"ingredients", "nutrition", "food_safety_ids"},
+    )
     for key, value in data.items():
         setattr(recipe, key, value)
 
     ingredients = getattr(payload, "ingredients", None)
     if ingredients is not None:
-        recipe.ingredients.clear()
+        # Hapus dulu komposisi lama dan flush, agar unique (recipe_id, ingredient_id)
+        # tidak bentrok saat baris baru dengan bahan yang sama disisipkan.
+        if recipe.id is not None:
+            db.query(RecipeIngredient).filter(
+                RecipeIngredient.recipe_id == recipe.id
+            ).delete(synchronize_session=False)
+            db.flush()
+            db.expire(recipe, ["ingredients"])
         for line in ingredients:
             recipe.ingredients.append(RecipeIngredient(**line.model_dump()))
+
+    food_safety_ids = getattr(payload, "food_safety_ids", None)
+    if food_safety_ids is not None:
+        recipe.food_safety = (
+            db.query(FoodSafetyInfo)
+            .filter(FoodSafetyInfo.id.in_(food_safety_ids))
+            .all()
+            if food_safety_ids
+            else []
+        )
 
     nutrition = getattr(payload, "nutrition", None)
     if nutrition is not None:
@@ -184,6 +242,10 @@ def create_recipe(
     db.add(recipe)
     db.commit()
     db.refresh(recipe)
+    from app.services.engine_data import hitung_gizi_semua_menu
+
+    hitung_gizi_semua_menu(db)
+    db.refresh(recipe)
     return recipe
 
 
@@ -197,6 +259,9 @@ def update_recipe(
     recipe = _get_or_404(db, Recipe, item_id, "Menu")
     _replace_recipe_children(db, recipe, payload)
     db.commit()
+    from app.services.engine_data import hitung_gizi_semua_menu
+
+    hitung_gizi_semua_menu(db)
     db.refresh(recipe)
     return recipe
 
@@ -325,3 +390,83 @@ def delete_local(item_id: int, db: Session = Depends(get_db), _: User = AdminDep
     item = _get_or_404(db, LocalAvailability, item_id, "Komoditas lokal")
     db.delete(item)
     db.commit()
+
+
+# --------------------------------------------------------------------------
+# Tabel gabungan: bahan + gizi + harga (halaman admin "Nutrisi")
+# --------------------------------------------------------------------------
+@router.get("/nutrition-grid", response_model=list[NutritionGridRow])
+def nutrition_grid(db: Session = Depends(get_db), _: User = AdminDep) -> list[NutritionGridRow]:
+    """Semua bahan dengan gizi, harga terakhir, dan jumlah menu yang memakainya.
+
+    Satu permintaan agar halaman admin tidak perlu menggabungkan tiga endpoint
+    dan tetap konsisten saat diedit.
+    """
+    gizi = {n.ingredient_id: n for n in db.query(NutritionFact)}
+    harga: dict[int, Price] = {}
+    for p in db.query(Price).order_by(Price.recorded_date.desc(), Price.id.desc()):
+        harga.setdefault(p.ingredient_id, p)
+    dipakai: dict[int, int] = {}
+    for (ingredient_id,) in db.query(RecipeIngredient.ingredient_id).distinct():
+        dipakai[ingredient_id] = (
+            db.query(RecipeIngredient)
+            .filter(RecipeIngredient.ingredient_id == ingredient_id)
+            .count()
+        )
+    rows = []
+    for ins in db.query(Ingredient).order_by(Ingredient.name):
+        nz = gizi.get(ins.id)
+        p = harga.get(ins.id)
+        rows.append(NutritionGridRow(
+            ingredient_id=ins.id, code=ins.code, name=ins.name,
+            category=ins.category.value if ins.category else '',
+            unit=ins.unit, mbg_slot=ins.mbg_slot.value if ins.mbg_slot else None,
+            allergens=list(ins.allergens or []), is_local=bool(ins.is_local),
+            used_in_menus=dipakai.get(ins.id, 0),
+            price_per_kg=float(p.price) if p else None,
+            price_source=p.source if p else None,
+            price_status=p.status.value if p else None,
+            nutrition=NutritionFactIn.model_validate(nz) if nz else None,
+        ))
+    return rows
+
+
+@router.patch("/nutrition-grid/{ingredient_id}", response_model=NutritionGridRow)
+def update_nutrition_grid(
+    ingredient_id: int,
+    payload: NutritionGridUpdate,
+    db: Session = Depends(get_db),
+    _: User = AdminDep,
+) -> NutritionGridRow:
+    """Simpan koreksi admin, lalu hitung ulang gizi menu yang memakai bahan ini.
+
+    Gizi menu bersifat turunan; tanpa hitung ulang, angka di halaman menu akan
+    berbeda dengan angka yang dipakai mesin.
+    """
+    ins = _get_or_404(db, Ingredient, ingredient_id, "Bahan")
+    for key, value in payload.model_dump(exclude_unset=True,
+                                         exclude={'nutrition', 'price_per_kg'}).items():
+        setattr(ins, key, value)
+    if payload.nutrition is not None:
+        fact = (db.query(NutritionFact)
+                .filter(NutritionFact.ingredient_id == ingredient_id).one_or_none())
+        if fact is None:
+            fact = NutritionFact(ingredient_id=ingredient_id)
+            db.add(fact)
+        for key, value in payload.nutrition.model_dump().items():
+            setattr(fact, key, value)
+    if payload.price_per_kg is not None:
+        terakhir = (db.query(Price).filter(Price.ingredient_id == ingredient_id)
+                    .order_by(Price.recorded_date.desc(), Price.id.desc()).first())
+        if terakhir is None or float(terakhir.price) != payload.price_per_kg:
+            db.add(Price(
+                ingredient_id=ingredient_id, region_id=None,
+                price=payload.price_per_kg, unit='kg',
+                recorded_date=date.today(), source_type=PriceSourceType.MANUAL,
+                source='koreksi admin', status=PriceStatus.APPROVED))
+    db.commit()
+    from app.services.engine_data import hitung_gizi_semua_menu
+
+    hitung_gizi_semua_menu(db)
+    baris = next(r for r in nutrition_grid(db) if r.ingredient_id == ingredient_id)
+    return baris

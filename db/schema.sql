@@ -6,6 +6,25 @@
 -- Sumber acuan: SKPL V4 Final (PDM Tabel 6.3-6.24) + ekstensi aplikasi web.
 
 
+CREATE TABLE anthropometry_standards (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	index_name VARCHAR(10) NOT NULL, 
+	sex VARCHAR(2) NOT NULL, 
+	age_month NUMERIC(6, 1) NOT NULL, 
+	minus3sd NUMERIC(7, 2) NOT NULL, 
+	minus2sd NUMERIC(7, 2) NOT NULL, 
+	minus1sd NUMERIC(7, 2) NOT NULL, 
+	median NUMERIC(7, 2) NOT NULL, 
+	plus1sd NUMERIC(7, 2) NOT NULL, 
+	plus2sd NUMERIC(7, 2) NOT NULL, 
+	plus3sd NUMERIC(7, 2) NOT NULL, 
+	source VARCHAR(150) NOT NULL DEFAULT 'Permenkes 2/2020', 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_anthro_point UNIQUE (index_name, sex, age_month)
+);
+
+CREATE INDEX ix_anthro_lookup ON anthropometry_standards (index_name, sex, age_month);
+
 CREATE TABLE articles (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
 	code VARCHAR(64), 
@@ -56,11 +75,40 @@ CREATE TABLE ingredients (
 	image_url VARCHAR(255), 
 	is_local BOOL NOT NULL DEFAULT '0', 
 	is_in_season BOOL NOT NULL DEFAULT '0', 
+	mbg_slot ENUM('pokok','hewani','nabati','sayur','buah','susu'), 
+	allergens JSON NOT NULL, 
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, 
 	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, 
 	PRIMARY KEY (id), 
 	UNIQUE (code)
 );
+
+CREATE TABLE nutrition_standards (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	code VARCHAR(16) NOT NULL, 
+	age_group VARCHAR(30) NOT NULL, 
+	sex VARCHAR(12) NOT NULL DEFAULT 'Semua', 
+	physiology VARCHAR(20) NOT NULL DEFAULT 'Normal', 
+	weight_kg NUMERIC(5, 1), 
+	height_cm NUMERIC(5, 1), 
+	energy_kcal NUMERIC(8, 1) NOT NULL, 
+	protein_g NUMERIC(6, 1) NOT NULL, 
+	fat_g NUMERIC(6, 1) NOT NULL DEFAULT '0', 
+	carb_g NUMERIC(6, 1) NOT NULL DEFAULT '0', 
+	fiber_g NUMERIC(6, 1) NOT NULL DEFAULT '0', 
+	calcium_mg NUMERIC(8, 1) NOT NULL DEFAULT '0', 
+	iron_mg NUMERIC(6, 1) NOT NULL DEFAULT '0', 
+	vitamin_a_mcg NUMERIC(8, 1) NOT NULL DEFAULT '0', 
+	vitamin_c_mg NUMERIC(6, 1) NOT NULL DEFAULT '0', 
+	sodium_mg NUMERIC(8, 1) NOT NULL DEFAULT '0', 
+	source VARCHAR(150) NOT NULL DEFAULT 'Permenkes 28/2019', 
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_nutrition_standard UNIQUE (age_group, sex, physiology), 
+	UNIQUE (code)
+);
+
+CREATE INDEX ix_nutrition_standard_lookup ON nutrition_standards (age_group, sex);
 
 CREATE TABLE recipes (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -79,6 +127,7 @@ CREATE TABLE recipes (
 	image_alt VARCHAR(255), 
 	is_local BOOL NOT NULL DEFAULT '0', 
 	in_season BOOL NOT NULL DEFAULT '0', 
+	meal_kind VARCHAR(12) NOT NULL DEFAULT 'komponen', 
 	price_updated_at DATETIME, 
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, 
 	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, 
@@ -128,9 +177,9 @@ CREATE TABLE users (
 	PRIMARY KEY (id)
 );
 
-CREATE INDEX ix_users_role ON users (`role`);
-
 CREATE UNIQUE INDEX ix_users_email ON users (email);
+
+CREATE INDEX ix_users_role ON users (`role`);
 
 CREATE TABLE family_members (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -140,6 +189,7 @@ CREATE TABLE family_members (
 	age_group ENUM('balita','anak','dewasa','lansia'), 
 	gender ENUM('laki-laki','perempuan'), 
 	weight_kg NUMERIC(5, 1) NOT NULL, 
+	height_cm NUMERIC(5, 1), 
 	activity_level ENUM('rendah','sedang','tinggi') NOT NULL DEFAULT 'sedang', 
 	allergies VARCHAR(255), 
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, 
@@ -159,9 +209,9 @@ CREATE TABLE favorites (
 	FOREIGN KEY(recipe_id) REFERENCES recipes (id) ON DELETE CASCADE
 );
 
-CREATE INDEX ix_favorites_user_id ON favorites (user_id);
-
 CREATE INDEX ix_favorites_recipe_id ON favorites (recipe_id);
+
+CREATE INDEX ix_favorites_user_id ON favorites (user_id);
 
 CREATE TABLE history_entries (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -192,9 +242,9 @@ CREATE TABLE local_availability (
 	FOREIGN KEY(region_id) REFERENCES regions (id) ON DELETE CASCADE
 );
 
-CREATE INDEX ix_local_availability_region_id ON local_availability (region_id);
-
 CREATE INDEX ix_local_availability_ingredient_id ON local_availability (ingredient_id);
+
+CREATE INDEX ix_local_availability_region_id ON local_availability (region_id);
 
 CREATE TABLE meal_plans (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -236,6 +286,14 @@ CREATE TABLE nutrition_facts (
 	carbs NUMERIC(8, 1) NOT NULL DEFAULT '0', 
 	fat NUMERIC(8, 1) NOT NULL DEFAULT '0', 
 	fiber NUMERIC(8, 1) NOT NULL DEFAULT '0', 
+	bdd_percent NUMERIC(5, 1) NOT NULL DEFAULT '100', 
+	calcium_mg NUMERIC(8, 1) NOT NULL DEFAULT '0', 
+	iron_mg NUMERIC(8, 1) NOT NULL DEFAULT '0', 
+	vitamin_a_mcg NUMERIC(8, 1) NOT NULL DEFAULT '0', 
+	vitamin_c_mg NUMERIC(8, 1) NOT NULL DEFAULT '0', 
+	sugar_g NUMERIC(8, 1) NOT NULL DEFAULT '0', 
+	sodium_mg NUMERIC(8, 1) NOT NULL DEFAULT '0', 
+	details JSON NOT NULL, 
 	source VARCHAR(100) NOT NULL DEFAULT 'TKPI Kemenkes RI', 
 	PRIMARY KEY (id), 
 	UNIQUE (ingredient_id), 
@@ -258,11 +316,11 @@ CREATE TABLE prices (
 	FOREIGN KEY(region_id) REFERENCES regions (id) ON DELETE SET NULL
 );
 
+CREATE INDEX ix_prices_region_id ON prices (region_id);
+
 CREATE INDEX ix_prices_lookup ON prices (ingredient_id, region_id, recorded_date);
 
 CREATE INDEX ix_prices_ingredient_id ON prices (ingredient_id);
-
-CREATE INDEX ix_prices_region_id ON prices (region_id);
 
 CREATE TABLE profiles (
 	user_id INTEGER NOT NULL, 
@@ -275,6 +333,8 @@ CREATE TABLE profiles (
 	region_id INTEGER, 
 	preferences JSON NOT NULL, 
 	avoided_ingredients JSON NOT NULL, 
+	meals_per_day INTEGER NOT NULL DEFAULT '3', 
+	include_susu BOOL NOT NULL DEFAULT '1', 
 	notifications_enabled BOOL NOT NULL DEFAULT '1', 
 	onboarded BOOL NOT NULL DEFAULT '0', 
 	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, 
@@ -299,9 +359,9 @@ CREATE TABLE recipe_ingredients (
 	FOREIGN KEY(ingredient_id) REFERENCES ingredients (id) ON DELETE SET NULL
 );
 
-CREATE INDEX ix_recipe_ingredients_recipe_id ON recipe_ingredients (recipe_id);
-
 CREATE INDEX ix_recipe_ingredients_ingredient_id ON recipe_ingredients (ingredient_id);
+
+CREATE INDEX ix_recipe_ingredients_recipe_id ON recipe_ingredients (recipe_id);
 
 CREATE TABLE recipe_nutrition (
 	recipe_id INTEGER NOT NULL, 
@@ -444,9 +504,9 @@ CREATE TABLE schools (
 	FOREIGN KEY(sppg_officer_id) REFERENCES sppg_officers (id) ON DELETE CASCADE
 );
 
-CREATE INDEX ix_schools_sppg_officer_id ON schools (sppg_officer_id);
-
 CREATE INDEX ix_schools_npsn ON schools (npsn);
+
+CREATE INDEX ix_schools_sppg_officer_id ON schools (sppg_officer_id);
 
 CREATE TABLE shopping_lists (
 	id INTEGER NOT NULL AUTO_INCREMENT, 

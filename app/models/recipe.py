@@ -11,12 +11,14 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
+    Column,
     DateTime,
     ForeignKey,
     Integer,
     JSON,
     Numeric,
     String,
+    Table,
     Text,
     UniqueConstraint,
     func,
@@ -28,6 +30,20 @@ from app.models.enums import RecipeCategory, enum_column
 
 if TYPE_CHECKING:
     from app.models.catalog import Ingredient
+    from app.models.content import FoodSafetyInfo
+
+
+# Relasi eksplisit menu -> catatan keamanan pangan (bukan tebakan nama bahan).
+recipe_food_safety = Table(
+    "recipe_food_safety",
+    Base.metadata,
+    Column("recipe_id", ForeignKey("recipes.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "food_safety_id",
+        ForeignKey("food_safety_info.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
 
 
 class Recipe(Base):
@@ -46,6 +62,7 @@ class Recipe(Base):
     servings: Mapped[int] = mapped_column(Integer, nullable=False, server_default="4")
     cooking_time_min: Mapped[int] = mapped_column(Integer, nullable=False, server_default="30")
     image_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    image_file_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     steps: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     is_vegetarian: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="0"
@@ -59,6 +76,12 @@ class Recipe(Base):
     image_alt: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_local: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0")
     in_season: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0")
+    # 'hidangan' = paket lengkap (nasi pecel, soto); 'komponen' = satu slot MBG
+    # (nasi putih, tempe bacem, pisang). Slot yang dipenuhi hidangan SELALU
+    # diturunkan dari kategori mbg_slot bahannya, tidak ditulis di sini.
+    meal_kind: Mapped[str] = mapped_column(
+        String(12), nullable=False, server_default="komponen"
+    )
     price_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
@@ -75,6 +98,9 @@ class Recipe(Base):
     )
     ingredients: Mapped[list["RecipeIngredient"]] = relationship(
         back_populates="recipe", cascade="all, delete-orphan", lazy="selectin"
+    )
+    food_safety: Mapped[list["FoodSafetyInfo"]] = relationship(
+        secondary=recipe_food_safety, lazy="selectin"
     )
 
     def __repr__(self) -> str:  # pragma: no cover

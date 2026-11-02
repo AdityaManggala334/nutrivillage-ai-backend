@@ -91,6 +91,17 @@ class LocalLevel(str, Enum):
     LIMITED = "limited"
 
 
+class MbgSlot(str, Enum):
+    """Slot komponen paket MBG (BGN): satu bahan mengisi tepat satu slot."""
+
+    POKOK = "pokok"
+    HEWANI = "hewani"
+    NABATI = "nabati"
+    SAYUR = "sayur"
+    BUAH = "buah"
+    SUSU = "susu"
+
+
 class MealType(str, Enum):
     SARAPAN = "sarapan"
     MAKAN_SIANG = "makan-siang"

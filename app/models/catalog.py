@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     DateTime,
+    JSON,
     ForeignKey,
     Integer,
     Numeric,
@@ -22,7 +23,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
-from app.models.enums import IngredientCategory, LocalLevel, SeasonalStatus, enum_column
+from app.models.enums import IngredientCategory, LocalLevel, SeasonalStatus, MbgSlot, enum_column
 
 if TYPE_CHECKING:
     from app.models.recipe import RecipeIngredient
@@ -57,6 +58,14 @@ class Ingredient(Base):
     # Ekstensi website: penanda pangan lokal & musim (dipakai admin & Explore).
     is_local: Mapped[bool] = mapped_column(nullable=False, server_default="0")
     is_in_season: Mapped[bool] = mapped_column(nullable=False, server_default="0")
+    # Slot MBG yang diisi bahan ini (lauk hewani vs nabati tidak dibedakan oleh
+    # `category`, jadi disimpan eksplisit dan dapat diubah admin).
+    mbg_slot: Mapped[MbgSlot | None] = mapped_column(
+        enum_column(MbgSlot, "mbg_slot"), nullable=True
+    )
+    # Daftar alergen (mis. ["kedelai"], ["susu"]). Engine membuang menu bila
+    # penguna punya alergi yang cocok; admin yang merawatnya.
+    allergens: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )
@@ -89,6 +98,22 @@ class NutritionFact(Base):
     carbs: Mapped[float] = mapped_column(Numeric(8, 1), nullable=False, server_default="0")
     fat: Mapped[float] = mapped_column(Numeric(8, 1), nullable=False, server_default="0")
     fiber: Mapped[float] = mapped_column(Numeric(8, 1), nullable=False, server_default="0")
+    # Bagian Dapat Dimakan (%). Biaya = (gram bersih / BDD) x harga per kg kotor.
+    bdd_percent: Mapped[float] = mapped_column(
+        Numeric(5, 1), nullable=False, server_default="100"
+    )
+    # Mikronutrien per 100 g. Nilai 0 berarti belum tersedia di sumber, dan engine
+    # TIDAK menghitungnya sebagai kekurangan (drenormalisasi per bahan).
+    calcium_mg: Mapped[float] = mapped_column(Numeric(8, 1), nullable=False, server_default="0")
+    iron_mg: Mapped[float] = mapped_column(Numeric(8, 1), nullable=False, server_default="0")
+    vitamin_a_mcg: Mapped[float] = mapped_column(Numeric(8, 1), nullable=False, server_default="0")
+    vitamin_c_mg: Mapped[float] = mapped_column(Numeric(8, 1), nullable=False, server_default="0")
+    sugar_g: Mapped[float] = mapped_column(Numeric(8, 1), nullable=False, server_default="0")
+    sodium_mg: Mapped[float] = mapped_column(Numeric(8, 1), nullable=False, server_default="0")
+    # Gizi TKPI lainnya (lemak jenuh, omega, vitamin D/E/K/B, mineral tambahan).
+    # Disimpan sebagai JSON karena tidak dibaca mesin — hanya untuk kelengkapan
+    # data dan penelusuran sumber.
+    details: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     source: Mapped[str] = mapped_column(
         String(100), nullable=False, server_default="TKPI Kemenkes RI"
     )

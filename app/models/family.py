@@ -52,6 +52,10 @@ class FamilyProfile(Base):
     )
     preferences: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     avoided_ingredients: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Frekuensi makan per hari (1-5) dan sakelar slot susu. Keduanya mengubah
+    # paket yang dirakit mesin, jadi disimpan di profil, bukan di kode.
+    meals_per_day: Mapped[int] = mapped_column(Integer, nullable=False, server_default="3")
+    include_susu: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="1")
     # Ekstensi website: sakelar notifikasi pengguna (FR-21).
     notifications_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="1"
@@ -88,6 +92,9 @@ class FamilyMember(Base):
         enum_column(Gender, "gender"), nullable=True
     )
     weight_kg: Mapped[float] = mapped_column(Numeric(5, 1), nullable=False)
+    # Tinggi badan dipakai EER dewasa dan z-score TB/U anak. NULL berarti belum
+    # diisi; mesin memakai acuan AKG tanpa koreksi tinggi.
+    height_cm: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
     activity_level: Mapped[ActivityLevel] = mapped_column(
         enum_column(ActivityLevel, "activity_level"),
         nullable=False,

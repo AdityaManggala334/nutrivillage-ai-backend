@@ -29,6 +29,7 @@ from app.models.price import (
     ScraperRun,
 )
 from app.models.recipe import Recipe, RecipeIngredient, RecipeNutrition
+from app.models.standard import AnthropometryStandard, NutritionStandard
 from app.models.school import School
 from app.models.sppg import SppgOfficer
 from app.models.user import User, UserRole
@@ -75,4 +76,7 @@ __all__ = [
     "Article",
     "Notification",
     "FoodSafetyInfo",
+    # Acuan gizi nasional
+    "NutritionStandard",
+    "AnthropometryStandard",
 ]

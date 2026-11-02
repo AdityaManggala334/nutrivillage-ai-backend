@@ -87,6 +87,8 @@ def _to_out(db: Session, profile: FamilyProfile) -> FamilyProfileOut:
         region=region.name if region else "",
         preferences=list(profile.preferences or []),
         avoided_ingredients=list(profile.avoided_ingredients or []),
+        meals_per_day=int(profile.meals_per_day or 3),
+        include_susu=bool(profile.include_susu),
         onboarded=bool(profile.onboarded),
         family_count=int(profile.family_count or 0),
         members=[
@@ -97,6 +99,7 @@ def _to_out(db: Session, profile: FamilyProfile) -> FamilyProfileOut:
                 age_group=m.age_group,
                 gender=m.gender,
                 weight_kg=float(m.weight_kg),
+                height_cm=float(m.height_cm) if m.height_cm is not None else None,
                 activity_level=m.activity_level,
                 allergies=_split_allergies(m.allergies),
             )
@@ -135,6 +138,8 @@ def save_profile(
     profile.region_id = region.id
     profile.preferences = list(payload.preferences)
     profile.avoided_ingredients = list(payload.avoided_ingredients)
+    profile.meals_per_day = payload.meals_per_day
+    profile.include_susu = payload.include_susu
     profile.onboarded = payload.onboarded
     profile.adults_count = counts["dewasa"]
     profile.children_count = counts["anak"]
@@ -152,6 +157,7 @@ def save_profile(
                 age_group=_resolve_age_group(member.age, member.age_group),
                 gender=member.gender,
                 weight_kg=member.weight_kg,
+                height_cm=member.height_cm,
                 activity_level=member.activity_level or ActivityLevel.SEDANG,
                 allergies=_join_allergies(member.allergies),
             )

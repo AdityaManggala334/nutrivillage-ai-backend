@@ -218,6 +218,22 @@ def ensure_schema() -> None:
         # Halaman Profil: nomor HP kontak + sakelar notifikasi (FR-21).
         "ALTER TABLE users ADD COLUMN phone VARCHAR(30) NULL",
         "ALTER TABLE profiles ADD COLUMN notifications_enabled TINYINT NOT NULL DEFAULT 1",
+        # v2.2 — data gizi & slot MBG yang dibaca mesin rekomendasi.
+        "ALTER TABLE ingredients ADD COLUMN mbg_slot ENUM('pokok','hewani','nabati','sayur','buah','susu') NULL",
+        "ALTER TABLE ingredients ADD COLUMN allergens JSON NULL",
+        "ALTER TABLE nutrition_facts ADD COLUMN bdd_percent NUMERIC(5,1) NOT NULL DEFAULT 100",
+        "ALTER TABLE nutrition_facts ADD COLUMN calcium_mg NUMERIC(8,1) NOT NULL DEFAULT 0",
+        "ALTER TABLE nutrition_facts ADD COLUMN iron_mg NUMERIC(6,1) NOT NULL DEFAULT 0",
+        "ALTER TABLE nutrition_facts ADD COLUMN vitamin_a_mcg NUMERIC(8,1) NOT NULL DEFAULT 0",
+        "ALTER TABLE nutrition_facts ADD COLUMN vitamin_c_mg NUMERIC(6,1) NOT NULL DEFAULT 0",
+        "ALTER TABLE nutrition_facts ADD COLUMN sugar_g NUMERIC(6,1) NOT NULL DEFAULT 0",
+        "ALTER TABLE nutrition_facts ADD COLUMN sodium_mg NUMERIC(8,1) NOT NULL DEFAULT 0",
+        "ALTER TABLE nutrition_facts ADD COLUMN details JSON NULL",
+        "ALTER TABLE recipes ADD COLUMN meal_kind VARCHAR(12) NOT NULL DEFAULT 'komponen'",
+        "ALTER TABLE recipes ADD COLUMN image_file_id VARCHAR(120) NULL",
+        "ALTER TABLE family_members ADD COLUMN height_cm NUMERIC(5,1) NULL",
+        "ALTER TABLE profiles ADD COLUMN meals_per_day INTEGER NOT NULL DEFAULT 3",
+        "ALTER TABLE profiles ADD COLUMN include_susu TINYINT NOT NULL DEFAULT 1",
     ]
     with engine.connect() as conn:
         for statement in statements:
@@ -230,7 +246,7 @@ def ensure_schema() -> None:
                 if "1060" in message or "duplicate column" in message:
                     continue
                 raise
-    print("[db] skema terbaru terverifikasi (is_active, phone, notifications_enabled)")
+    print("[db] skema terbaru terverifikasi (termasuk kolom gizi & slot MBG v2.2)")
 
 
 def main() -> None:

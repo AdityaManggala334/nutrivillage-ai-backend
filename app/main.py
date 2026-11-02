@@ -16,11 +16,13 @@ from app.routers import (
     auth,
     content,
     history,
+    impor,
     market,
     master,
     planning,
     profile,
     recipes,
+    recommendations,
     schools,
     users,
 )
@@ -66,6 +68,8 @@ app.include_router(recipes.router, prefix=settings.api_prefix)
 app.include_router(history.router, prefix=settings.api_prefix)
 app.include_router(planning.router, prefix=settings.api_prefix)
 app.include_router(ai.router, prefix=settings.api_prefix)
+app.include_router(recommendations.router, prefix=settings.api_prefix)
+app.include_router(impor.router, prefix=settings.api_prefix)
 
 
 @app.get("/health", tags=["meta"])
