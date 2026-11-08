@@ -119,6 +119,7 @@ CREATE TABLE recipes (
 	servings INTEGER NOT NULL DEFAULT '4', 
 	cooking_time_min INTEGER NOT NULL DEFAULT '30', 
 	image_url VARCHAR(255), 
+	image_file_id VARCHAR(120), 
 	steps JSON NOT NULL, 
 	is_vegetarian BOOL NOT NULL DEFAULT '0', 
 	estimated_cost NUMERIC(12, 2) NOT NULL DEFAULT '0', 
@@ -553,3 +554,11 @@ CREATE TABLE shopping_list_items (
 );
 
 CREATE INDEX ix_shopping_list_items_list_id ON shopping_list_items (list_id);
+
+CREATE TABLE recipe_food_safety (
+	recipe_id INTEGER NOT NULL, 
+	food_safety_id INTEGER NOT NULL, 
+	PRIMARY KEY (recipe_id, food_safety_id), 
+	FOREIGN KEY(recipe_id) REFERENCES recipes (id) ON DELETE CASCADE, 
+	FOREIGN KEY(food_safety_id) REFERENCES food_safety_info (id) ON DELETE CASCADE
+);
