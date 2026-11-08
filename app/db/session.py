@@ -32,16 +32,22 @@ def _resolve_ca_path(value: str) -> str:
 
 
 def build_connect_args() -> dict[str, object]:
-    """connect_args untuk PyMySQL; menambahkan TLS bila DATABASE_SSL_CA diisi."""
+    """connect_args untuk PyMySQL; menambahkan TLS bila DATABASE_SSL_CA diisi.
+
+    `connect_timeout` mencegah boot menggantung tanpa batas saat TiDB sedang
+    scale-to-zero atau jaringan lambat (Render akan menganggap deploy gagal).
+    """
+    args: dict[str, object] = {"connect_timeout": 10}
     if not settings.database_ssl_ca.strip():
-        return {}
+        return args
 
     ca_path = _resolve_ca_path(settings.database_ssl_ca)
     context = ssl.create_default_context(cafile=ca_path)
     if not settings.database_ssl_verify:
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
-    return {"ssl": context}
+    args["ssl"] = context
+    return args
 
 
 def create_db_engine() -> Engine:
