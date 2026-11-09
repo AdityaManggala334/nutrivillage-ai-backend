@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_roles
-from app.core.security import hash_password
+from app.core.security import hash_password, utcnow
 from app.crud.users import (
     count_schools_for_officer,
     count_users,
@@ -16,6 +16,7 @@ from app.crud.users import (
     update_user,
 )
 from app.db.session import get_db
+from app.models.session import RefreshToken
 from app.models.user import User, UserRole
 from app.schemas.auth import UserCreateRequest, UserListItem, UserUpdateRequest
 
@@ -136,6 +137,8 @@ def update(
             "position": (payload.position or "").strip() or None,
         }
 
+    role_lama = user.role
+
     try:
         user = update_user(
             db,
@@ -151,5 +154,17 @@ def update(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Gagal memperbarui akun. Periksa kembali datanya.",
         ) from exc
+
+    # Peran berubah: bersihkan data yang tidak lagi relevan dan cabut sesi lama
+    # supaya perubahan berlaku pada permintaan berikutnya, bukan 8 jam lagi.
+    if payload.role is not None and payload.role != role_lama:
+        if payload.role != UserRole.PETUGAS_SPPG and user.sppg_officer is not None:
+            db.delete(user.sppg_officer)
+        user.token_version += 1
+        db.query(RefreshToken).filter(
+            RefreshToken.user_id == user.id,
+            RefreshToken.revoked_at.is_(None),
+        ).update({"revoked_at": utcnow()}, synchronize_session=False)
+        db.commit()
 
     return _to_item(db, user)

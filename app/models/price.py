@@ -57,6 +57,11 @@ class Price(Base):
     status: Mapped[PriceStatus] = mapped_column(
         enum_column(PriceStatus, "price_status"), nullable=False, server_default="pending"
     )
+    # Siapa yang mencatat harga ini. Ditulis server dari token, bukan dari
+    # body, supaya antrean verifikasi tahu siapa menyetor.
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )

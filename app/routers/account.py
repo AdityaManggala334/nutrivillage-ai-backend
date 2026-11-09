@@ -10,9 +10,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
-from app.core.security import hash_password, verify_password
+from app.core.security import hash_password, utcnow, verify_password
 from app.db.session import get_db
 from app.models.family import FamilyProfile
+from app.models.session import RefreshToken
 from app.models.user import User
 from app.schemas.auth import (
     AccountOut,
@@ -96,4 +97,11 @@ def change_password(
             detail="Password lama tidak sesuai.",
         )
     user.password_hash = hash_password(payload.new_password)
+    # Ganti sandi = cabut seluruh sesi: access token lama ditolak lewat
+    # token_version, refresh token lama ditandai dicabut.
+    user.token_version += 1
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == user.id,
+        RefreshToken.revoked_at.is_(None),
+    ).update({"revoked_at": utcnow()}, synchronize_session=False)
     db.commit()

@@ -36,8 +36,12 @@ def build_connect_args() -> dict[str, object]:
 
     `connect_timeout` mencegah boot menggantung tanpa batas saat TiDB sedang
     scale-to-zero atau jaringan lambat (Render akan menganggap deploy gagal).
+    Hanya dikirim untuk URL MySQL: `sqlite3.connect()` menolak argumen itu,
+    dan uji otomatis memakai SQLite.
     """
-    args: dict[str, object] = {"connect_timeout": 10}
+    args: dict[str, object] = {}
+    if settings.database_url.startswith("mysql"):
+        args["connect_timeout"] = 10
     if not settings.database_ssl_ca.strip():
         return args
 

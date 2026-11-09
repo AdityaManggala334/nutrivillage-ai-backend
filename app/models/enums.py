@@ -72,6 +72,7 @@ class PriceStatus(str, Enum):
 class PriceSourceType(str, Enum):
     SCRAPER = "scraper"
     MANUAL = "manual"
+    LAPANGAN = "lapangan"
 
 
 class PriceVerificationStatus(str, Enum):

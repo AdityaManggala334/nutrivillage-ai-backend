@@ -29,6 +29,7 @@ from app.models.price import (
     ScraperRun,
 )
 from app.models.recipe import Recipe, RecipeIngredient, RecipeNutrition
+from app.models.session import RefreshToken
 from app.models.standard import AnthropometryStandard, NutritionStandard
 from app.models.school import School
 from app.models.sppg import SppgOfficer
@@ -38,6 +39,7 @@ __all__ = [
     # Auth & SPPG
     "User",
     "UserRole",
+    "RefreshToken",
     "SppgOfficer",
     "School",
     "BeneficiaryGroup",

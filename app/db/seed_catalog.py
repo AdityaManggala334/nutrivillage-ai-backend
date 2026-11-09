@@ -25,7 +25,6 @@ from app.models import (
     RecipeIngredient,
     RecipeNutrition,
     Region,
-    ScraperRun,
     SeasonalAvailability,
     SystemConfig,
 )
@@ -38,7 +37,6 @@ from app.models.enums import (
     PriceSourceType,
     PriceStatus,
     RecipeCategory,
-    ScraperStatus,
     SeasonalStatus,
 )
 
@@ -333,16 +331,6 @@ NOTIFICATIONS: list[dict] = [
     {"code": "notif-4", "title": "Pengingat jadwal masak", "message": "Meal Planner pekan ini belum lengkap. Yuk isi jadwalnya.", "kind": NotificationKind.WARNING, "read": True, "days_ago": 3},
 ]
 
-SCRAPER_RUNS: list[dict] = [
-    {"source": "Portal Pasar Madiun", "status": ScraperStatus.SUCCESS, "items_count": 42, "error_message": None, "days_ago": 0},
-    {"source": "Portal Pasar Madiun", "status": ScraperStatus.SUCCESS, "items_count": 40, "error_message": None, "days_ago": 1},
-    {"source": "Portal Pasar Madiun", "status": ScraperStatus.FAILED, "items_count": 0, "error_message": "Timeout saat mengambil halaman harga", "days_ago": 2},
-    {"source": "Portal Pasar Madiun", "status": ScraperStatus.SUCCESS, "items_count": 41, "error_message": None, "days_ago": 3},
-    {"source": "Portal Pasar Madiun", "status": ScraperStatus.PARTIAL, "items_count": 5, "error_message": "Struktur HTML berubah, selector tidak ditemukan", "days_ago": 4},
-    {"source": "Portal Pasar Madiun", "status": ScraperStatus.SUCCESS, "items_count": 39, "error_message": None, "days_ago": 5},
-]
-
-
 def seed_regions(db: Session) -> dict[str, Region]:
     result: dict[str, Region] = {}
     for item in REGIONS:
@@ -429,7 +417,10 @@ def seed_prices(db: Session, ingredients: dict[str, Ingredient]) -> None:
                 price=item["price"],
                 unit=item["unit"],
                 source=item["source"],
-                source_type=PriceSourceType.SCRAPER if "Portal" in item["source"] else PriceSourceType.MANUAL,
+                # Seed bukan hasil pengambilan otomatis, jadi jangan mengaku
+                # bersumber scraper: nilai `scraper` hanya dipakai bila scraper
+                # sungguhan sudah berjalan.
+                source_type=PriceSourceType.MANUAL,
                 status=item["status"],
                 recorded_date=(datetime.now() - timedelta(days=item["days_ago"])).date(),
             )
@@ -507,24 +498,6 @@ def seed_notifications(db: Session) -> None:
     db.commit()
 
 
-def seed_scraper_runs(db: Session) -> None:
-    if db.query(ScraperRun).count() > 0:
-        return
-    for item in SCRAPER_RUNS:
-        when = _days_ago(item["days_ago"])
-        db.add(
-            ScraperRun(
-                source=item["source"],
-                started_at=when,
-                finished_at=when,
-                status=item["status"],
-                items_count=item["items_count"],
-                error_message=item["error_message"],
-            )
-        )
-    db.commit()
-
-
 def seed_catalog(db: Session) -> None:
     """Jalankan seluruh seed katalog (idempoten)."""
     regions = seed_regions(db)
@@ -537,7 +510,9 @@ def seed_catalog(db: Session) -> None:
     seed_food_safety(db)
     seed_articles(db)
     seed_notifications(db)
-    seed_scraper_runs(db)
+    # Log scraper sengaja TIDAK di-seed: halaman monitoring harus kosong sampai
+    # scraper PIHPS sungguhan berjalan, supaya tidak ada angka latihan yang
+    # disalahartikan sebagai hasil produksi.
     print("[seed] katalog (bahan, resep, harga, musim, lokal, konten) siap")
 
 

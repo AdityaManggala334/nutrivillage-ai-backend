@@ -50,10 +50,21 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: "mysql+pymysql://root:@db:3306/nutri_village_ai?charset=utf8mb4"
+      # Stack ini untuk UJIAN LOKAL. JWT_SECRET masih nilai default dan port
+      # 8000 terbuka di host, jadi JANGAN dijalankan di mesin yang terjangkau
+      # jaringan luar. Untuk deployment, pakai render.yaml dan ganti semua
+      # rahasia (pemeriksaan gagal-cepat aktif bila ENVIRONMENT=production).
+      ENVIRONMENT: "development"
       JWT_SECRET: "nutrivillage-dev-secret-change-me"
       JWT_ALGORITHM: "HS256"
       ACCESS_TOKEN_EXPIRE_MINUTES: "480"
+      REFRESH_TOKEN_EXPIRE_DAYS: "30"
       CORS_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+      # Tidak ada proxy di depan backend -> IP diambil dari koneksi TCP.
+      TRUST_PROXY: "0"
+      # Akun demo publik (admin12345 dsb.) tidak dibuat walau lokal (T-03).
+      SEED_DEMO_ACCOUNTS: "0"
+      LLM_REQUIRE_AUTH: "1"
     ports:
       - "8000:8000"
 

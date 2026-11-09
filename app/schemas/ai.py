@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class AiExplainRequest(BaseModel):
@@ -24,6 +24,14 @@ class AiExplainRequest(BaseModel):
     recipe_id: int | None = Field(default=None, gt=0)
     # Simpan hasil ke tabel `llm_explanations` (bisa dimatikan untuk uji cepat).
     save: bool = True
+
+    @field_validator("ingredients")
+    @classmethod
+    def _batasi_panjang_bahan(cls, nilai: list[str]) -> list[str]:
+        """Batas per item, bukan hanya jumlah item: nilai ini masuk ke prompt LLM."""
+        if any(len(item) > 80 for item in nilai):
+            raise ValueError("Nama bahan maksimal 80 karakter.")
+        return [item.strip() for item in nilai]
 
 
 class AiExplainResponse(BaseModel):

@@ -6,26 +6,30 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum as SAEnum, String, func
+from sqlalchemy import Boolean, DateTime, Enum as SAEnum, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
 
 if TYPE_CHECKING:
+    from app.models.session import RefreshToken
     from app.models.sppg import SppgOfficer
 
 
 class UserRole(str, Enum):
     """Peran (RBAC).
 
-    - user          : masyarakat umum (pengguna akhir).
-    - petugas_sppg  : petugas SPPG MBG (Makan Bergizi Gratis).
-    - admin         : pengelola data master & verifikasi harga.
-    - guest         : akses terbatas tanpa registrasi.
+    - user             : masyarakat umum (pengguna akhir).
+    - petugas_sppg     : petugas SPPG MBG (Makan Bergizi Gratis).
+    - petugas_lapangan : pencatat harga bahan di pasar; kirimannya menunggu
+                         persetujuan admin dan tidak bisa menyetujui sendiri.
+    - admin            : pengelola data master & verifikasi harga.
+    - guest            : akses terbatas tanpa registrasi.
     """
 
     USER = "user"
     PETUGAS_SPPG = "petugas_sppg"
+    PETUGAS_LAPANGAN = "petugas_lapangan"
     ADMIN = "admin"
     GUEST = "guest"
 
@@ -54,6 +58,11 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="1"
     )
+    # Naik setiap logout-all / ganti password: membuat seluruh access token
+    # lama ditolak sebelum masa kedaluwarsanya habis (T-02).
+    token_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )
@@ -67,6 +76,11 @@ class User(Base):
     sppg_officer: Mapped["SppgOfficer | None"] = relationship(
         back_populates="user",
         uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+        back_populates="user",
         cascade="all, delete-orphan",
     )
 

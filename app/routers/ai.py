@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.deps import get_optional_user
+from app.core.ratelimit import client_ip, consume
 from app.db.session import get_db
 from app.models.planning import LlmExplanation
 from app.models.recipe import Recipe
@@ -30,13 +31,31 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 
-def require_llm_user(user: User | None = Depends(get_optional_user)) -> User | None:
-    """Login hanya diwajibkan bila `LLM_REQUIRE_AUTH=true` (mis. pemakaian API cloud)."""
+LLM_PER_HOUR = 30
+
+
+def require_llm_user(
+    request: Request,
+    user: User | None = Depends(get_optional_user),
+) -> User | None:
+    """Login diwajibkan bila `LLM_REQUIRE_AUTH=true`, plus kuota per pemakai.
+
+    Tanpa kuota, endpoint ini bisa dipakai mengirim panggilan ke API cloud
+    berbayar dan menulis `llm_explanations` tanpa batas (K-02).
+    """
     if settings.llm_require_auth and user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token autentikasi diperlukan untuk memakai endpoint AI.",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+    kunci = f"llm:user:{user.id}" if user else f"llm:ip:{client_ip(request)}"
+    kuota = consume(kunci, limit=LLM_PER_HOUR, window_seconds=3600)
+    if not kuota.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Kuota AI {LLM_PER_HOUR}x per jam tercapai. Coba lagi nanti.",
+            headers={"Retry-After": str(kuota.retry_after)},
         )
     return user
 

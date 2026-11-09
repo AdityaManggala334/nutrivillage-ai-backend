@@ -13,12 +13,11 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.core.deps import require_roles
-from app.core.security import decode_access_token
+from app.core.deps import get_optional_user, require_roles
+from app.core.ratelimit import client_ip, consume
 from app.db.session import get_db
 from app.models.catalog import Region
 from app.models.family import FamilyProfile
@@ -36,23 +35,34 @@ from app.services.engine_data import bangun_snapshot, hitung_gizi_semua_menu
 router = APIRouter(prefix="/recommendations", tags=["rekomendasi"])
 
 AdminDep = Depends(require_roles(UserRole.ADMIN))
-_bearer = HTTPBearer(auto_error=False)
+
+#: Kuota generate (FR-35) dipindah ke backend agar berlaku untuk web maupun
+#: aplikasi mobile. Sebelumnya hanya ada di lapisan Next.js sehingga bisa
+#: dilewati dengan memanggil FastAPI langsung.
+GENERATE_PER_HOUR = 5
 
 
-def pengguna_opsional(
-    db: Session = Depends(get_db),
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-) -> User | None:
-    """Kembalikan penguna bila token sah; None untuk mode tamu."""
-    if credentials is None:
-        return None
-    payload = decode_access_token(credentials.credentials)
-    if not payload:
-        return None
-    try:
-        return db.get(User, int(payload['sub']))
-    except (KeyError, TypeError, ValueError):
-        return None
+def pengguna_opsional(user: User | None = Depends(get_optional_user)) -> User | None:
+    """Pemakai dengan token sah; None untuk mode tanpa login."""
+    return user
+
+
+def kuota_generate(
+    request: Request, user: User | None, *, aksi: str = "generate", limit: int = GENERATE_PER_HOUR
+) -> None:
+    """Batasi perhitungan rekomendasi per akun (tamu: per IP pengirim)."""
+    kunci = (
+        f"gen:{aksi}:user:{user.id}" if user else f"gen:{aksi}:ip:{client_ip(request)}"
+    )
+    hasil = consume(kunci, limit=limit, window_seconds=3600)
+    if not hasil.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"Kuota {aksi} {limit}x per jam sudah terpakai. Coba lagi nanti."
+            ),
+            headers={"Retry-After": str(hasil.retry_after)},
+        )
 
 
 def _lengkap_rencana(db: Session, profil: ProfilKeluargaIn, mode: str) -> dict:
@@ -113,11 +123,13 @@ def meta(db: Session = Depends(get_db)) -> dict:
 @router.post("/keluarga", response_model=RekomendasiRespons)
 def rekomendasi_keluarga(
     payload: ProfilKeluargaIn,
+    request: Request,
     mode: str = 'hidangan',
     db: Session = Depends(get_db),
     user: User | None = Depends(pengguna_opsional),
 ) -> RekomendasiRespons:
     """Paket makan keluarga untuk seluruh waktu makan sesuai frekuensi."""
+    kuota_generate(request, user)
     hasil = _lengkap_rencana(db, payload, mode)
     rencana = RencanaKeluarga(**hasil)
     belanja = (recommender.belanja_keluarga(db, payload, hasil)
@@ -131,10 +143,12 @@ def rekomendasi_keluarga(
 @router.post("/sppg", response_model=RekomendasiRespons)
 def rekomendasi_sppg(
     payload: ProfilSekolahIn,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User | None = Depends(pengguna_opsional),
+    user: User | None = Depends(pengguna_opsional),
 ) -> RekomendasiRespons:
     """Paket MBG per kelompok penerima manfaat, dengan anggaran BGN per tingkat."""
+    kuota_generate(request, user)
     snapshot = bangun_snapshot(db, payload.region)
     if snapshot['jumlah_menu'] == 0:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -146,10 +160,14 @@ def rekomendasi_sppg(
 @router.post("/belanja", response_model=DaftarBelanja)
 def belanja(
     payload: ProfilKeluargaIn,
+    request: Request,
     mode: str = 'hidangan',
     db: Session = Depends(get_db),
+    user: User | None = Depends(pengguna_opsional),
 ) -> DaftarBelanja:
     """Daftar belanja bahan mentah, diskalakan faktor porsi bukan jumlah kepala."""
+    # Bucket sendiri: satu aksi pengguna bisa memanggil /keluarga lalu /belanja.
+    kuota_generate(request, user, aksi="belanja", limit=20)
     hasil = _lengkap_rencana(db, payload, mode)
     return recommender.belanja_keluarga(db, payload, hasil)
 

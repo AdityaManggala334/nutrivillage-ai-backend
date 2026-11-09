@@ -43,6 +43,7 @@ from app.schemas.master import (
     RegionOut,
     SeasonalCreate,
     SeasonalOut,
+    SeasonalRangeIn,
     SeasonalUpdate,
 )
 
@@ -330,6 +331,51 @@ def delete_season(item_id: int, db: Session = Depends(get_db), _: User = AdminDe
     item = _get_or_404(db, SeasonalAvailability, item_id, "Data musim")
     db.delete(item)
     db.commit()
+
+
+@router.put(
+    "/seasons/{ingredient_id}",
+    response_model=list[SeasonalOut],
+    summary="Tetapkan rentang bulan panen satu bahan",
+)
+def set_season_range(
+    ingredient_id: int,
+    payload: SeasonalRangeIn,
+    db: Session = Depends(get_db),
+    _: User = AdminDep,
+) -> list[SeasonalAvailability]:
+    """Tulis ulang baris bulan untuk satu bahan: dalam rentang dibuat/diperbarui,
+    di luar rentang dihapus. Skema tetap satu baris per bulan sehingga mesin
+    rekomendasi tidak perlu ikut berubah.
+    """
+    _get_or_404(db, Ingredient, ingredient_id, "Bahan")
+    target = payload.bulan
+    ada = {
+        row.month: row
+        for row in db.query(SeasonalAvailability)
+        .filter(SeasonalAvailability.ingredient_id == ingredient_id)
+        .all()
+    }
+    for bulan, row in ada.items():
+        if bulan not in target:
+            db.delete(row)
+    for bulan in target:
+        row = ada.get(bulan)
+        if row is None:
+            db.add(
+                SeasonalAvailability(
+                    ingredient_id=ingredient_id, month=bulan, status=payload.status
+                )
+            )
+        else:
+            row.status = payload.status
+    db.commit()
+    return (
+        db.query(SeasonalAvailability)
+        .filter(SeasonalAvailability.ingredient_id == ingredient_id)
+        .order_by(SeasonalAvailability.month)
+        .all()
+    )
 
 
 # --------------------------------------------------------------------------

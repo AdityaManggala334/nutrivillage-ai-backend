@@ -1,6 +1,8 @@
 """Hashing password (bcrypt) dan JWT (HS256) — FR-01 / NFR-03."""
 
 from datetime import datetime, timedelta, timezone
+import hashlib
+import secrets
 
 import bcrypt
 import jwt
@@ -27,11 +29,14 @@ def create_access_token(
     email: str,
     role: str,
     created_at: datetime,
+    token_version: int = 0,
 ) -> str:
     """Terbitkan access token JWT.
 
     Klaim `name`, `email`, `role`, dan `created_at` disertakan agar frontend
     dapat memverifikasi sesi tanpa query basis data (getUserByToken sinkron).
+    Klaim `tver` dipakai backend untuk menolak token setelah logout-all atau
+    ganti password, tanpa menunggu token kedaluwarsa.
     """
     now = datetime.now(timezone.utc)
     payload = {
@@ -40,6 +45,7 @@ def create_access_token(
         "email": email,
         "role": role,
         "created_at": created_at.isoformat(),
+        "tver": token_version,
         "iat": now,
         "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
     }
@@ -51,3 +57,26 @@ def decode_access_token(token: str) -> dict | None:
         return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
     except jwt.PyJWTError:
         return None
+
+
+def create_refresh_token() -> str:
+    """Token acak untuk sesi jangka panjang (dikirim apa adanya ke klien)."""
+    return secrets.token_urlsafe(48)
+
+
+def utcnow() -> datetime:
+    """Waktu UTC tanpa `tzinfo`.
+
+    Kolom `DateTime` di proyek ini menyimpan naive UTC, jadi nilai sadar zona
+    waktu tidak boleh dibandingkan atau disimpan ke kolom tersebut.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def hash_token(token: str) -> str:
+    """Nilai yang disimpan di database; token asli tidak pernah disimpan."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def refresh_expiry() -> datetime:
+    return utcnow() + timedelta(days=settings.refresh_token_expire_days)

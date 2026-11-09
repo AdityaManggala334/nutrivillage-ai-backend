@@ -58,6 +58,20 @@ def get_article(article_id: int, db: Session = Depends(get_db)) -> Article:
 # --------------------------------------------------------------------------
 # Artikel gizi — admin
 # --------------------------------------------------------------------------
+@router.get(
+    "/admin/articles",
+    response_model=list[ArticleOut],
+    dependencies=[AdminDep],
+)
+def admin_list_articles(db: Session = Depends(get_db)) -> list[Article]:
+    """Daftar lengkap untuk halaman admin.
+
+    Jalur ini sebelumnya tidak ada, sehingga `/admin/artikel` selalu memuat
+    kegagalan (405) dan artikel yang sudah dibuat tidak bisa dikelola.
+    """
+    return db.query(Article).order_by(Article.created_at.desc(), Article.id.desc()).all()
+
+
 @router.post(
     "/admin/articles",
     response_model=ArticleOut,

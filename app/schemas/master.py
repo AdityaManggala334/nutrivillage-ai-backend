@@ -229,6 +229,25 @@ class SeasonalUpdate(BaseModel):
     status: SeasonalStatus | None = None
 
 
+class SeasonalRangeIn(BaseModel):
+    """Rentang bulan panen satu bahan.
+
+    Satu permintaan mengganti seluruh baris bulan bahan ini, jadi admin tidak
+    perlu mengirim dua belas baris. Rentang boleh memotong tahun
+    (November s/d Februari).
+    """
+
+    start_month: int = Field(ge=1, le=12)
+    end_month: int = Field(ge=1, le=12)
+    status: SeasonalStatus = SeasonalStatus.IN_SEASON
+
+    @property
+    def bulan(self) -> list[int]:
+        if self.start_month <= self.end_month:
+            return list(range(self.start_month, self.end_month + 1))
+        return list(range(self.start_month, 13)) + list(range(1, self.end_month + 1))
+
+
 class SeasonalOut(SeasonalBase):
     model_config = ConfigDict(from_attributes=True)
 

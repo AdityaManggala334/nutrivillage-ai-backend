@@ -83,6 +83,43 @@ git push            # ke GitHub
 # Render otomatis redeploy (auto-deploy aktif)
 ```
 
+### 5a. Urutan migrasi bila ada nilai ENUM baru
+
+Kolom `users.role` dan `prices.source_type` adalah MySQL `ENUM`. Menambah nilai
+di kode **tidak** menambah nilai di database. Jika kode lebih dulu ter-deploy
+sebelum kolomnya dilebarkan, MySQL menolak menulis (`Data truncated for column
+'role'`) dan pengguna baru gagal dibuat.
+
+Urutan aman:
+
+1. Jalankan `ALTER TABLE` lebih dulu (Render > Shell, atau client MySQL):
+
+   ```sql
+   ALTER TABLE users  MODIFY role ENUM('user','petugas_sppg','petugas_lapangan','admin','guest') NOT NULL;
+   ALTER TABLE prices MODIFY source_type ENUM('scraper','manual','lapangan') NOT NULL;
+   ALTER TABLE prices ADD COLUMN created_by INTEGER NULL;
+   ```
+
+2. Baru `git push` kode yang memakai nilai baru.
+
+`scripts/init_db.py` (yang dijalankan `start.sh`) sudah memuat pernyataan ini,
+tetapi ia berjalan setelah aplikasi siap melayani pada boot pertama — jadi untuk
+perubahan ENUM, jalankan manual lebih dulu.
+
+### 5b. Membersihkan data latihan
+
+`seed_scraper_runs()` sudah dihapus dari kode, tetapi baris lamanya masih ada di
+database yang pernah di-seed. Halaman Monitoring akan tetap menampilkan angka
+latihan sampai baris itu dihapus:
+
+```sql
+DELETE FROM scraper_runs;
+UPDATE prices SET source_type = 'manual' WHERE source_type = 'scraper';
+```
+
+Pernyataan `UPDATE` di atas hanya benar bila scraper sungguhan belum pernah
+berjalan — periksa dulu dengan `SELECT COUNT(*) FROM scraper_runs`.
+
 ---
 
 ## 6. Troubleshooting

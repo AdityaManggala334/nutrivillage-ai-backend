@@ -26,11 +26,19 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 8
 
+    # Sesi jangka panjang untuk aplikasi mobile; dirotasi tiap kali dipakai.
+    refresh_token_expire_days: int = 30
+
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     # --- Lingkungan & produksi ---------------------------------------------
     # "development" (default) atau "production".
     environment: str = "development"
+
+    # True hanya bila backend benar-benar di belakang proxy yang menyetel
+    # X-Forwarded-For (Render/nginx). Default False: IP diambil dari koneksi
+    # TCP supaya header palsu tidak bisa melewati pembatas laju.
+    trust_proxy: bool = False
 
     # TLS database (mis. TiDB Cloud). Isi DATABASE_SSL_CA dengan ISI file CA
     # (PEM) atau path ke file .pem. Kosongkan untuk MySQL lokal.
@@ -70,8 +78,9 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "llama3.2:1b"
     llm_timeout_seconds: float = 180.0
-    # True = POST /ai/explain wajib login (disarankan saat memakai API cloud).
-    llm_require_auth: bool = False
+    # True = POST /ai/explain wajib login. Default aktif agar endpoint tidak
+    # bisa dipakai gratis oleh pihak luar saat API cloud berbayar tersambung.
+    llm_require_auth: bool = True
 
     @property
     def is_production(self) -> bool:
@@ -101,6 +110,10 @@ class Settings(BaseSettings):
         if self.seed_demo_accounts:
             problems.append(
                 "SEED_DEMO_ACCOUNTS masih aktif. Matikan agar akun demo publik tidak dibuat."
+            )
+        if any("localhost" in o or "127.0.0.1" in o for o in self.cors_origin_list):
+            problems.append(
+                "CORS_ORIGINS masih berisi localhost. Isi domain frontend produksi."
             )
         if problems:
             raise RuntimeError(

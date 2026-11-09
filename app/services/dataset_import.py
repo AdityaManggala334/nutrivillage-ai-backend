@@ -133,6 +133,15 @@ BERKAS_TERKENAL = ('01_menu_komponen', '02_bahan_gizi', '03_resep_komponen',
                    '04_harga_pangan', '05_akg', '06_musim_pangan',
                    '07_alergen_bahan', '10_antropometri_zscore')
 
+#: Batas unggah. Ditegakkan di backend (bukan hanya di layar) karena aplikasi
+#: mobile memanggil FastAPI langsung tanpa melewati lapisan Next.js.
+MAKS_BERKAS_MB = 10
+MAKS_BERKAS_JUMLAH = 7
+
+#: Wilayah yang boleh dipakai impor. Nama lain ditolak supaya tabel `regions`
+#: tidak tumbuh berisi "Lainnya", "tangerang", atau salah ketik.
+WILAYAH_DIIZINKAN = ('Kabupaten Madiun', 'Kota Madiun', 'Luar Daerah')
+
 
 def kenali(nama_berkas: str) -> str | None:
     kunci = (nama_berkas or '').split('/')[-1].replace(' ', '_')

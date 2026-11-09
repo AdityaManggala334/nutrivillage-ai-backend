@@ -27,6 +27,14 @@ services:
         value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "480"
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: "30"
+      # Render menempatkan proxy di depan layanan, jadi X-Forwarded-For dipakai
+      # sebagai sumber IP untuk pembatas laju login/kuota.
+      - key: TRUST_PROXY
+        value: "1"
+      - key: LLM_REQUIRE_AUTH
+        value: "1"
       # Wajib diisi manual:
       - key: DATABASE_URL
         sync: false

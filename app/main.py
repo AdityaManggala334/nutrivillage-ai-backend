@@ -17,6 +17,7 @@ from app.routers import (
     content,
     history,
     impor,
+    lapangan,
     market,
     master,
     planning,
@@ -46,7 +47,23 @@ app = FastAPI(
         "masyarakat umum serta petugas SPPG MBG."
     ),
     lifespan=lifespan,
+    # Dokumentasi API ditutup di produksi: isinya peta lengkap seluruh endpoint
+    # dan skema data, yang tidak perlu dibaca pihak luar (S-03).
+    docs_url=None if settings.is_production else "/docs",
+    redoc_url=None if settings.is_production else "/redoc",
+    openapi_url=None if settings.is_production else "/openapi.json",
 )
+
+
+@app.middleware("http")
+async def header_keamanan(request, call_next):
+    """Header dasar untuk membatasi klik-jacking, sniffing MIME, dan embedding."""
+    respons = await call_next(request)
+    respons.headers["X-Content-Type-Options"] = "nosniff"
+    respons.headers["X-Frame-Options"] = "DENY"
+    respons.headers["Referrer-Policy"] = "no-referrer"
+    respons.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return respons
 
 app.add_middleware(
     CORSMiddleware,
@@ -70,6 +87,7 @@ app.include_router(planning.router, prefix=settings.api_prefix)
 app.include_router(ai.router, prefix=settings.api_prefix)
 app.include_router(recommendations.router, prefix=settings.api_prefix)
 app.include_router(impor.router, prefix=settings.api_prefix)
+app.include_router(lapangan.router, prefix=settings.api_prefix)
 
 
 @app.get("/health", tags=["meta"])

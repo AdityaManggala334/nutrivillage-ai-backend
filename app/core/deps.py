@@ -46,6 +46,17 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Pengguna tidak ditemukan.",
         )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Akun ini dinonaktifkan. Hubungi admin.",
+        )
+    if int(payload.get("tver", 0)) != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sesi sudah dicabut. Silakan masuk kembali.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user
 
 
@@ -83,4 +94,9 @@ def get_optional_user(
         user_id = int(payload["sub"])
     except (KeyError, TypeError, ValueError):
         return None
-    return db.get(User, user_id)
+    user = db.get(User, user_id)
+    if user is None or not user.is_active:
+        return None
+    if int(payload.get("tver", 0)) != user.token_version:
+        return None
+    return user

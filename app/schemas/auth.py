@@ -37,6 +37,19 @@ class UserOut(BaseModel):
 class AuthSession(BaseModel):
     user: UserOut
     token: str
+    # Refresh token hanya dikirim saat login/register/refresh. Web lama boleh
+    # mengabaikannya; aplikasi mobile memakainya untuk menjaga sesi > 8 jam.
+    refresh_token: str | None = None
+    refresh_expires_in: int | None = None
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=32, max_length=200)
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str | None = Field(default=None, max_length=200)
+    all_devices: bool = False
 
 
 class RegisterRequest(BaseModel):

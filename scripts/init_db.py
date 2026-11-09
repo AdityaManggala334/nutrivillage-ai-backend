@@ -215,6 +215,9 @@ def ensure_schema() -> None:
     """Migrasi non-destruktif untuk kolom yang ditambahkan setelah rilis awal."""
     statements = [
         "ALTER TABLE users ADD COLUMN is_active TINYINT NOT NULL DEFAULT 1",
+        # Sesi dapat dicabut (T-02): token tanpa klaim tver dihitung sebagai 0,
+        # sehingga pengguna lama tidak keluar mendadak setelah migrasi.
+        "ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0",
         # Halaman Profil: nomor HP kontak + sakelar notifikasi (FR-21).
         "ALTER TABLE users ADD COLUMN phone VARCHAR(30) NULL",
         "ALTER TABLE profiles ADD COLUMN notifications_enabled TINYINT NOT NULL DEFAULT 1",
@@ -234,6 +237,12 @@ def ensure_schema() -> None:
         "ALTER TABLE family_members ADD COLUMN height_cm NUMERIC(5,1) NULL",
         "ALTER TABLE profiles ADD COLUMN meals_per_day INTEGER NOT NULL DEFAULT 3",
         "ALTER TABLE profiles ADD COLUMN include_susu TINYINT NOT NULL DEFAULT 1",
+        # Peran Petugas Lapangan + asal harga "lapangan" + pencatat harga.
+        # ENUM harus dilebarkan lebih dulu; kode yang menulis nilai baru tidak
+        # boleh jalan sebelum pernyataan ini diterapkan (lihat DEPLOY.md).
+        "ALTER TABLE users MODIFY role ENUM('user','petugas_sppg','petugas_lapangan','admin','guest') NOT NULL",
+        "ALTER TABLE prices MODIFY source_type ENUM('scraper','manual','lapangan') NOT NULL",
+        "ALTER TABLE prices ADD COLUMN created_by INTEGER NULL",
     ]
     with engine.connect() as conn:
         for statement in statements:
