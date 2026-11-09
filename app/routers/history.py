@@ -99,6 +99,13 @@ def save_history(
         db.add(existing)
         db.commit()
         db.refresh(existing)
+    else:
+        # B4: menyimpan resep yang sama bukan error — cukup pembaruan catatan.
+        # Pesan "Resep tidak valid." yang lama menyesatkan pengguna.
+        if payload.note and payload.note != (existing.note or ""):
+            existing.note = payload.note
+            db.commit()
+            db.refresh(existing)
 
     return _to_out(existing, _favorite_ids(db, user.id), recipe)
 

@@ -33,6 +33,7 @@ CREATE TABLE articles (
 	category ENUM('Gizi Dasar','Pangan Lokal','Tips Hemat','Kesehatan') NOT NULL, 
 	read_minutes INTEGER NOT NULL DEFAULT '3', 
 	body JSON NOT NULL, 
+	status VARCHAR(12) NOT NULL DEFAULT 'published', 
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, 
 	PRIMARY KEY (id), 
 	UNIQUE (code)
@@ -324,9 +325,9 @@ CREATE INDEX ix_prices_region_id ON prices (region_id);
 
 CREATE INDEX ix_prices_created_by ON prices (created_by);
 
-CREATE INDEX ix_prices_ingredient_id ON prices (ingredient_id);
-
 CREATE INDEX ix_prices_lookup ON prices (ingredient_id, region_id, recorded_date);
+
+CREATE INDEX ix_prices_ingredient_id ON prices (ingredient_id);
 
 CREATE TABLE profiles (
 	user_id INTEGER NOT NULL, 
@@ -373,9 +374,9 @@ CREATE TABLE recipe_ingredients (
 	FOREIGN KEY(ingredient_id) REFERENCES ingredients (id) ON DELETE SET NULL
 );
 
-CREATE INDEX ix_recipe_ingredients_ingredient_id ON recipe_ingredients (ingredient_id);
-
 CREATE INDEX ix_recipe_ingredients_recipe_id ON recipe_ingredients (recipe_id);
+
+CREATE INDEX ix_recipe_ingredients_ingredient_id ON recipe_ingredients (ingredient_id);
 
 CREATE TABLE recipe_nutrition (
 	recipe_id INTEGER NOT NULL, 
@@ -482,9 +483,9 @@ CREATE TABLE price_history (
 	FOREIGN KEY(changed_by) REFERENCES users (id) ON DELETE SET NULL
 );
 
-CREATE INDEX ix_price_history_price_id ON price_history (price_id);
-
 CREATE INDEX ix_price_history_ingredient_id ON price_history (ingredient_id);
+
+CREATE INDEX ix_price_history_price_id ON price_history (price_id);
 
 CREATE TABLE price_verifications (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -533,9 +534,9 @@ CREATE TABLE schools (
 	FOREIGN KEY(sppg_officer_id) REFERENCES sppg_officers (id) ON DELETE CASCADE
 );
 
-CREATE INDEX ix_schools_npsn ON schools (npsn);
-
 CREATE INDEX ix_schools_sppg_officer_id ON schools (sppg_officer_id);
+
+CREATE INDEX ix_schools_npsn ON schools (npsn);
 
 CREATE TABLE shopping_lists (
 	id INTEGER NOT NULL AUTO_INCREMENT, 

@@ -28,6 +28,7 @@ from app.schemas.planning import (
     MealPlanOut,
     MealPlanRemovedOut,
     ShoppingGenerateIn,
+    ShoppingItemManualIn,
     ShoppingItemOut,
     ShoppingListOut,
     ShoppingPatchIn,
@@ -308,6 +309,34 @@ def generate_shopping_list(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Isi week_id atau recipe_id",
         )
+    return _list_out(db, shopping_list)
+
+
+@router.post("/shopping-list/item", response_model=ShoppingListOut, status_code=status.HTTP_201_CREATED)
+def add_manual_shopping_item(
+    payload: ShoppingItemManualIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ShoppingListOut:
+    """FR-06: tambah bahan secara manual ke daftar belanja aktif.
+
+    SKPL V4 FR-06: "menambah bahan (dari Meal Planner, hasil rekomendasi
+    Explore, atau manual)" — jalur manual ini yang sebelumnya belum ada.
+    """
+    shopping_list = _ensure_list(db, user)
+    db.add(
+        ShoppingListItem(
+            list_id=shopping_list.id,
+            ingredient_id=None,
+            name=payload.name.strip(),
+            quantity=payload.quantity,
+            unit=payload.unit.strip(),
+            estimated_price=payload.estimated_price,
+            checked=False,
+        )
+    )
+    db.commit()
+    db.refresh(shopping_list)
     return _list_out(db, shopping_list)
 
 

@@ -19,11 +19,18 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.deps import get_optional_user
 from app.core.ratelimit import client_ip, consume
+
 from app.db.session import get_db
 from app.models.planning import LlmExplanation
-from app.models.recipe import Recipe
+from app.models.recipe import Recipe, RecipeIngredient, RecipeNutrition
 from app.models.user import User
-from app.schemas.ai import AiExplainRequest, AiExplainResponse, AiHealthResponse
+
+from app.schemas.ai import (
+    AiExplainByIdRequest,
+    AiExplainRequest,
+    AiExplainResponse,
+    AiHealthResponse,
+)
 from app.services import llm
 
 logger = logging.getLogger(__name__)
@@ -87,6 +94,74 @@ def _save_explanation(
 @router.get("/health", response_model=AiHealthResponse)
 def ai_health() -> AiHealthResponse:
     return AiHealthResponse(**llm.check_health())
+
+
+@router.post("/explain/by-id", response_model=AiExplainResponse)
+def ai_explain_by_id(
+    payload: AiExplainByIdRequest,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(require_llm_user),
+) -> AiExplainResponse:
+    """C1 (FR-11): penjelasan menu berbasis `recipe_id`, dengan cache baca.
+
+    Alur: baca cache `llm_explanations` untuk menu ini -> kalau belum ada,
+    susun konteks dari database -> panggil LLM (atau fallback) -> simpan.
+    Dengan cache, satu halaman detail yang sering dibuka tidak menghasilkan
+    panggilan API berulang (sesuai maksud NFR-04).
+    """
+    recipe = db.get(Recipe, payload.recipe_id)
+    if recipe is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Menu tidak ditemukan."
+        )
+
+    # 1) Cache baca: penjelasan terakhir untuk menu ini.
+    cache = (
+        db.query(LlmExplanation)
+        .filter(LlmExplanation.recipe_id == recipe.id)
+        .order_by(LlmExplanation.created_at.desc(), LlmExplanation.id.desc())
+        .first()
+    )
+    if cache is not None:
+        return AiExplainResponse(
+            explanation=cache.explanation_text,
+            model=cache.model or "cache",
+            source="cache",
+            latency_ms=0,
+            saved_id=int(cache.id),
+            recipe_id=recipe.id,
+        )
+
+    # 2) Konteks dari database (bukan dari klien).
+    komposisi = (
+        db.query(RecipeIngredient)
+        .filter(RecipeIngredient.recipe_id == recipe.id)
+        .order_by(RecipeIngredient.id)
+        .all()
+    )
+    nama_bahan = [ri.name for ri in komposisi if ri.name]
+    gizi = db.query(RecipeNutrition).filter(RecipeNutrition.recipe_id == recipe.id).first()
+
+    context = llm.MenuContext(
+        recipe_name=recipe.name,
+        ingredients=tuple(nama_bahan[:30]),
+        calories=float(gizi.calories) if gizi and gizi.calories is not None else None,
+        protein=float(gizi.protein) if gizi and gizi.protein is not None else None,
+        estimated_cost=float(recipe.estimated_cost) if recipe.estimated_cost else None,
+        budget=payload.budget,
+        audience=(payload.audience or "").strip() or None,
+    )
+    hasil = llm.generate_explanation(context)
+
+    saved_id = _save_explanation(db, recipe.id, hasil.text, hasil.model)
+    return AiExplainResponse(
+        explanation=hasil.text,
+        model=hasil.model,
+        source=hasil.source,
+        latency_ms=hasil.latency_ms,
+        saved_id=saved_id,
+        recipe_id=recipe.id,
+    )
 
 
 @router.post("/explain", response_model=AiExplainResponse)

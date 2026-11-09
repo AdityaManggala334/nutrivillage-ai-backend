@@ -131,13 +131,24 @@ def rekomendasi_keluarga(
     db: Session = Depends(get_db),
     user: User | None = Depends(pengguna_opsional),
 ) -> RekomendasiRespons:
-    """Paket makan keluarga untuk seluruh waktu makan sesuai frekuensi."""
+    """Paket makan keluarga untuk seluruh waktu makan sesuai frekuensi.
+
+    FR-01 revisi: Recommendation Engine tidak terbuka untuk tamu. Guest diarahkan
+    ke login dengan penjelasan manfaat, bukan hasil rekomendasi kosong.
+    """
+    if user is None or user.role.value == 'guest':
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail='Rekomendasi disusun sesuai anggaran & kebutuhan gizi keluargamu. '
+                   'Masuk atau daftar untuk mencobanya.',
+            headers={'WWW-Authenticate': 'Bearer'},
+        )
     kuota_generate(request, user)
     hasil = _lengkap_rencana(db, payload, mode)
     rencana = RencanaKeluarga(**hasil)
     belanja = (recommender.belanja_keluarga(db, payload, hasil)
                if hasil.get('status') == 'ok' else None)
-    if user is not None and hasil.get('status') == 'ok':
+    if hasil.get('status') == 'ok':
         _riwayat(db, user, hasil)
     return RekomendasiRespons(keluarga=rencana, belanja=belanja,
                               sumber_data=meta(db))
@@ -150,7 +161,15 @@ def rekomendasi_sppg(
     db: Session = Depends(get_db),
     user: User | None = Depends(pengguna_opsional),
 ) -> RekomendasiRespons:
-    """Paket MBG per kelompok penerima manfaat, dengan anggaran BGN per tingkat."""
+    """Paket MBG per kelompok penerima manfaat, dengan anggaran BGN per tingkat.
+
+    FR-01 revisi & commit `78150ca`: dibatasi ke petugas SPPG dan admin.
+    """
+    if user is None or user.role.value not in ('petugas_sppg', 'admin'):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail='Perhitungan rencana MBG hanya untuk petugas SPPG.',
+        )
     kuota_generate(request, user)
     snapshot = bangun_snapshot(db, payload.region)
     if snapshot['jumlah_menu'] == 0:

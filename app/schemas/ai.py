@@ -7,6 +7,20 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 
+class AiExplainByIdRequest(BaseModel):
+    """C1 (FR-11 revisi): klien hanya mengirim `recipe_id`.
+
+    Semua konteks prompt (nama, bahan, gizi, harga) diambil backend dari
+    database. Ini menghapus dua risiko sekaligus: prompt injection lewat teks
+    yang dikirim klien, dan angka yang tidak cocok dengan data menu.
+    """
+
+    recipe_id: int = Field(gt=0)
+    # Konteks tambahan yang tidak ada di database (dibatasi panjangnya).
+    audience: str | None = Field(default=None, max_length=80)
+    budget: float | None = Field(default=None, ge=0)
+
+
 class AiExplainRequest(BaseModel):
     """Konteks menu yang akan dijelaskan.
 
@@ -37,9 +51,11 @@ class AiExplainRequest(BaseModel):
 class AiExplainResponse(BaseModel):
     explanation: str
     model: str
-    source: Literal["llm", "fallback"]
+    source: Literal["llm", "fallback", "cache"]
     latency_ms: int
     saved_id: int | None = None
+    # C1: recipe_id yang dijelaskan, untuk menautkan cache di UI.
+    recipe_id: int | None = None
 
 
 class AiHealthResponse(BaseModel):

@@ -32,6 +32,11 @@ class Article(Base):
     )
     read_minutes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="3")
     body: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # B8 (NFR-06): gerbang publikasi. Hanya "published" yang tampil ke publik;
+    # "draft" terlihat di panel admin saja.
+    status: Mapped[str] = mapped_column(
+        String(12), nullable=False, server_default="published"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )

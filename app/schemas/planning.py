@@ -69,3 +69,12 @@ class ShoppingPatchIn(BaseModel):
     item_id: int | None = None
     checked: bool | None = None
     note: str | None = Field(default=None, max_length=1000)
+
+
+class ShoppingItemManualIn(BaseModel):
+    """FR-06: tambah bahan secara manual (di luar jadwal & resep)."""
+
+    name: str = Field(min_length=2, max_length=100)
+    quantity: float = Field(default=1, gt=0, le=100000)
+    unit: str = Field(default="kg", min_length=1, max_length=20)
+    estimated_price: float = Field(default=0, ge=0, le=100_000_000)

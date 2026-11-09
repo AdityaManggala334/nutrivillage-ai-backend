@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_optional_user, require_roles
+from app.core.deps import get_current_user, get_optional_user, require_roles
 from app.db.session import get_db
 from app.models.content import Article, FoodSafetyInfo, Notification
 from app.models.enums import FoodSafetyVerification
@@ -47,12 +47,21 @@ def _get_or_404(db: Session, model, obj_id: int, label: str):
 # --------------------------------------------------------------------------
 @router.get("/articles", response_model=list[ArticleOut])
 def list_articles(db: Session = Depends(get_db)) -> list[Article]:
-    return db.query(Article).order_by(Article.created_at.desc(), Article.id.desc()).all()
+    """Artikel yang sudah dipublikasikan saja (B8: gerbang publikasi)."""
+    return (
+        db.query(Article)
+        .filter(Article.status == "published")
+        .order_by(Article.created_at.desc(), Article.id.desc())
+        .all()
+    )
 
 
 @router.get("/articles/{article_id}", response_model=ArticleOut)
 def get_article(article_id: int, db: Session = Depends(get_db)) -> Article:
-    return _get_or_404(db, Article, article_id, "Artikel")
+    artikel = _get_or_404(db, Article, article_id, "Artikel")
+    if artikel.status != "published":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artikel tidak ditemukan.")
+    return artikel
 
 
 # --------------------------------------------------------------------------
@@ -64,7 +73,7 @@ def get_article(article_id: int, db: Session = Depends(get_db)) -> Article:
     dependencies=[AdminDep],
 )
 def admin_list_articles(db: Session = Depends(get_db)) -> list[Article]:
-    """Daftar lengkap untuk halaman admin.
+    """Daftar lengkap untuk halaman admin (termasuk draft).
 
     Jalur ini sebelumnya tidak ada, sehingga `/admin/artikel` selalu memuat
     kegagalan (405) dan artikel yang sudah dibuat tidak bisa dikelola.
@@ -189,6 +198,48 @@ def admin_delete_notification(notification_id: int, db: Session = Depends(get_db
     item = _get_or_404(db, Notification, notification_id, "Notifikasi")
     db.delete(item)
     db.commit()
+
+
+@router.patch("/notifications/{notification_id}/read", response_model=NotificationOut)
+def mark_notification_read(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Notification:
+    """B9: tandai satu notifikasi sebagai sudah dibaca (pemiliknya saja)."""
+    item = _get_or_404(db, Notification, notification_id, "Notifikasi")
+    if user.role != UserRole.ADMIN and item.user_id not in (None, user.id):
+        # Notifikasi global (user_id NULL) boleh ditandai siapa saja; yang
+        # pribadi hanya pemiliknya.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Bukan notifikasi Anda."
+        )
+    if not item.read:
+        item.read = True
+        db.commit()
+        db.refresh(item)
+    return item
+
+
+@router.get("/notifications/unread-count")
+def unread_notification_count(
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
+) -> dict:
+    """B9: jumlah notifikasi belum dibaca (badge lonceng)."""
+    if user is None:
+        query = db.query(Notification).filter(
+            Notification.user_id.is_(None), Notification.read.is_(False)
+        )
+    else:
+        profile = db.get(FamilyProfile, user.id)
+        if profile is not None and not profile.notifications_enabled:
+            return {"count": 0}
+        query = db.query(Notification).filter(
+            or_(Notification.user_id.is_(None), Notification.user_id == user.id),
+            Notification.read.is_(False),
+        )
+    return {"count": query.count()}
 
 
 # --------------------------------------------------------------------------
