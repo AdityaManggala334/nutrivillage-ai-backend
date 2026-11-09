@@ -19,7 +19,10 @@ from app.schemas.recommendation import (
 )
 from app.services import engine_data, nutrition_core as core
 
-WAKTU_MAKAN = ('Sarapan', 'Makan Siang', 'Makan Malam', 'Selingan 1', 'Selingan 2')
+#: Nama waktu makan. FR-05 revisi: 5 waktu makan penuh (bukan selingan).
+WAKTU_MAKAN = core.WAKTU_MAKAN_LABEL
+#: Andil anggaran tiap waktu makan terhadap kebutuhan harian (jumlah = 1).
+SHARE_WAKTU_MAKAN = core.SHARE_WAKTU_MAKAN
 
 #: Kelompok penerima manfaat SPPG -> kelompok umur acuan AKG & anggaran BGN.
 SPPG_LEVEL = {
@@ -45,7 +48,13 @@ def _slot_wajib(alergi, include_susu=True):
 
 
 def _target_per_porsi(snapshot, profil, info):
-    """Target energi/protein/mikro untuk 1 porsi dewasa pada 1 waktu makan."""
+    """Target energi/protein/mikro untuk 1 porsi dewasa pada 1 waktu makan.
+
+    FR-05 revisi: tiap waktu makan punya andil energi berbeda
+    (`SHARE_WAKTU_MAKAN`), tapi rakit_paket bekerja per porsi dewasa yang
+    setara, jadi target per porsi tetap rata. Andil dipakai untuk membagi
+    anggaran harian ke tiap waktu makan (lihat rekomendasi_keluarga).
+    """
     bagi = info['porsi_utama'] or 1.0
     mikro = {k: v / bagi for k, v in info['mikro_per_porsi'].items()}
     return (info['energi'] / bagi, info['protein'] / bagi, mikro)
@@ -95,9 +104,13 @@ def rekomendasi_keluarga(db: Session, profil: ProfilKeluargaIn, mode: str = 'hid
     layak = core.saring(list(snapshot['menu'].values()), alergi,
                        profil.avoided_ingredients)
     dipakai, ditinggalkan = set(), set()
+    # Anggaran harian dibagi ke tiap waktu makan sesuai andilnya
+    # (sarapan/siang/malam besar, dua selingan ringan).
+    andil = core.SHARE_WAKTU_MAKAN
     for i in range(info['n_utama']):
+        anggaran_waktu = profil.daily_budget * andil[i] / max(info['faktor'], 1e-6)
         paket, status, catatan = core.rakit_paket(
-            layak, slots, anggaran, tk, tp, mikro, snapshot['bobot'], mode=mode,
+            layak, slots, anggaran_waktu, tk, tp, mikro, snapshot['bobot'], mode=mode,
             preferences=profil.preferences, sudah_dipakai=dipakai)
         if status != 'ok':
             keluaran |= {'status': 'infeasible', 'alasan': catatan['alasan'],
@@ -107,9 +120,9 @@ def rekomendasi_keluarga(db: Session, profil: ProfilKeluargaIn, mode: str = 'hid
         ditinggalkan |= set(catatan.get('slot_ditinggalkan') or [])
         dipakai |= {p['menu_id'] for p in paket}
         keluaran['waktu_makan'].append({
-            'waktu': WAKTU_MAKAN[i], 'anggaran_per_porsi': anggaran,
+            'waktu': WAKTU_MAKAN[i], 'anggaran_per_porsi': anggaran_waktu,
             'paket': [_item(p) for p in paket],
-            'ringkas': core.ringkas_paket(paket, anggaran, tk, tp),
+            'ringkas': core.ringkas_paket(paket, anggaran_waktu, tk, tp),
         })
 
     for j in range(info['n_selingan']):
@@ -125,30 +138,12 @@ def rekomendasi_keluarga(db: Session, profil: ProfilKeluargaIn, mode: str = 'hid
             f'Slot {nama} tidak memiliki kandidat yang lolos alergi/pantangan; '
             f'porsinya dibagi ulang ke slot lain.')
     keluaran['total_biaya_harian'] = round(
-        sum(w['ringkas']['total_biaya'] for w in keluaran['waktu_makan']) * info['faktor']
-        + sum(s['biaya'] for s in keluaran['selingan']) * info['faktor'])
+        sum(w['ringkas']['total_biaya'] for w in keluaran['waktu_makan']) * info['faktor'])
     keluaran['patuh_anggaran'] = keluaran['total_biaya_harian'] <= profil.daily_budget + 1
     semua = [p['recipe_id'] for w in keluaran['waktu_makan'] for p in w['paket']]
     keluaran['variasi'] = round(len(set(semua)) / len(semua), 3) if semua else 1.0
     keluaran['peringatan'] = _peringatan(keluaran, info, alergi)
     return _peringatan_harga(keluaran, snapshot)
-
-
-def _selingan(layak, keluaran, batasan, tk, tp, bobot):
-    """Selingan = buah atau susu satuan terkecil, di luar yang sudah dipakai."""
-    sudah = {str(p['recipe_id']) for w in keluaran['waktu_makan'] for p in w['paket']}
-    sudah |= {str(s['recipe_id']) for s in keluaran['selingan']}
-    calon = [m for m in layak if m['slot'] in (('buah',), ('susu',))
-             and m['menu_id'] not in sudah and m['biaya'] <= batasan]
-    if not calon:
-        return None
-    calon.sort(key=lambda m: -(m['kalori'] / max(tk * 0.10, 1)
-                              + m['protein'] / max(tp * 0.02, 1)))
-    m = calon[0]
-    return {'waktu': WAKTU_MAKAN[3 + len(keluaran['selingan'])],
-            'recipe_id': int(m['menu_id']), 'nama_menu': m['nama_menu'],
-            'slot': m['slot'][0], 'biaya': round(m['biaya']),
-            'kalori': round(m['kalori']), 'protein': round(m['protein'], 1)}
 
 
 def _gabung_antropometri(snapshot, baris, anggota):

@@ -17,6 +17,20 @@ from __future__ import annotations
 
 SLOT_URUTAN = ('pokok', 'hewani', 'nabati', 'sayur', 'buah', 'susu')
 
+#: Nama waktu makan dalam satu hari (FR-05 revisi: semua waktu makan penuh,
+#: bukan selingan setengah porsi). Indeks 0 = waktu makan pertama.
+WAKTU_MAKAN_LABEL = (
+    'Sarapan', 'Selingan Pagi', 'Makan Siang', 'Selingan Sore', 'Makan Malam',
+)
+
+#: Andil energi tiap waktu makan terhadap kebutuhan harian (jumlah = 1,0).
+#: Pola keluarga Indonesia: sarapan & makan siang paling besar, dua selingan
+#: ringan. Dipakai untuk membagi target energi ke tiap waktu makan.
+SHARE_WAKTU_MAKAN = (0.25, 0.10, 0.35, 0.10, 0.20)
+
+#: Berapa banyak waktu makan yang didukung mesin. SKPL V4 FR-05 revisi.
+MAKS_WAKTU_MAKAN = 5
+
 # Andil tiap slot terhadap target satu porsi (energi, protein, biaya).
 SLOT_SHARE = {
     'pokok':  {'kcal': 0.35, 'protein': 0.10, 'biaya': 0.18},
@@ -152,10 +166,12 @@ def target_keluarga(snapshot, profil):
     energi = sum(r['energi'] for r in rows)
     protein = sum(r['protein'] for r in rows)
     faktor = sum(r['faktor_porsi'] for r in rows)
-    n_utama = min(profil.meals_per_day, 3)
-    n_selingan = max(profil.meals_per_day - 3, 0)
+    # FR-05 revisi: semua waktu makan penuh. Target energi & anggaran dibagi
+    # sesuai porsi tiap waktu makan (SHARE_WAKTU_MAKAN), bukan selingan 35%.
+    n_utama = min(max(profil.meals_per_day, 1), MAKS_WAKTU_MAKAN)
+    n_selingan = 0
     porsi_utama = faktor * n_utama
-    total_porsi = porsi_utama + faktor * n_selingan * 0.35
+    total_porsi = porsi_utama
     mikro = {}
     for kunci, kolom in (('kalsium_mg', 'kalsium_mg'), ('besi_mg', 'besi_mg'),
                         ('vitamin_a_mcg', 'vitamin_a_mcg'),

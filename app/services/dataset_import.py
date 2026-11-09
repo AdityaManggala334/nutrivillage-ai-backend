@@ -54,12 +54,17 @@ KATEGORI_KE_BAHAN = {
     'ikan': IngredientCategory.PROTEIN, 'kacang': IngredientCategory.PROTEIN,
     'sayur': IngredientCategory.SAYUR, 'buah': IngredientCategory.BUAH,
     'susu': IngredientCategory.SUSU, 'bumbu': IngredientCategory.BUMBU,
+    'lemak': IngredientCategory.LAINNYA, 'gula_olahan': IngredientCategory.LAINNYA,
+    'minuman': IngredientCategory.LAINNYA,
 }
 KATEGORI_KE_SLOT = {
     'serealia': MbgSlot.POKOK, 'umbi': MbgSlot.POKOK,
     'daging': MbgSlot.HEWANI, 'telur': MbgSlot.HEWANI, 'ikan': MbgSlot.HEWANI,
     'kacang': MbgSlot.NABATI, 'sayur': MbgSlot.SAYUR, 'buah': MbgSlot.BUAH,
     'susu': MbgSlot.SUSU,
+    # Kategori dataset tanpa slot MBG resmi: slot-nya dibiarkan NULL sehingga
+    # biayanya tetap dihitung oleh mesin, tapi tidak dianggap slot wajib paket
+    # (bumbu/lemak/gula adalah pemasok biaya & rasa, bukan komponen utama).
 }
 KATEGORI_MENU_KE_RESEP = {
     'olahan_nasi': RecipeCategory.MAKANAN_UTAMA, 'pokok_nasi': RecipeCategory.MAKANAN_UTAMA,

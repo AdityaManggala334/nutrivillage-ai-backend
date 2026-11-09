@@ -243,6 +243,8 @@ def ensure_schema() -> None:
         "ALTER TABLE users MODIFY role ENUM('user','petugas_sppg','petugas_lapangan','admin','guest') NOT NULL",
         "ALTER TABLE prices MODIFY source_type ENUM('scraper','manual','lapangan') NOT NULL",
         "ALTER TABLE prices ADD COLUMN created_by INTEGER NULL",
+        # FR-05 revisi: meal planner menjadi 5 waktu makan penuh.
+        "ALTER TABLE meal_plans MODIFY meal_type ENUM('sarapan','selingan-pagi','makan-siang','selingan-sore','makan-malam') NOT NULL",
     ]
     with engine.connect() as conn:
         for statement in statements:

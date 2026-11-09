@@ -104,8 +104,16 @@ class MbgSlot(str, Enum):
 
 
 class MealType(str, Enum):
+    """Slot jadwal Meal Planner. FR-05 revisi: 5 waktu makan penuh.
+
+    ENUM MySQL harus dilebarkan sebelum kode yang menulis nilai baru
+    di-deploy (lihat DEPLOY.md bagian 5a).
+    """
+
     SARAPAN = "sarapan"
+    SELINGAN_PAGI = "selingan-pagi"
     MAKAN_SIANG = "makan-siang"
+    SELINGAN_SORE = "selingan-sore"
     MAKAN_MALAM = "makan-malam"
 
 

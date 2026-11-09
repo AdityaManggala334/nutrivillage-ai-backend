@@ -171,16 +171,17 @@ CREATE TABLE users (
 	email VARCHAR(150) NOT NULL, 
 	phone VARCHAR(30), 
 	password_hash VARCHAR(255) NOT NULL, 
-	`role` ENUM('user','petugas_sppg','admin','guest') NOT NULL, 
+	`role` ENUM('user','petugas_sppg','petugas_lapangan','admin','guest') NOT NULL, 
 	is_active BOOL NOT NULL DEFAULT '1', 
+	token_version INTEGER NOT NULL DEFAULT '0', 
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, 
 	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, 
 	PRIMARY KEY (id)
 );
 
-CREATE UNIQUE INDEX ix_users_email ON users (email);
-
 CREATE INDEX ix_users_role ON users (`role`);
+
+CREATE UNIQUE INDEX ix_users_email ON users (email);
 
 CREATE TABLE family_members (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -227,9 +228,9 @@ CREATE TABLE history_entries (
 	FOREIGN KEY(recipe_id) REFERENCES recipes (id) ON DELETE SET NULL
 );
 
-CREATE INDEX ix_history_entries_recipe_id ON history_entries (recipe_id);
-
 CREATE INDEX ix_history_entries_user_id ON history_entries (user_id);
+
+CREATE INDEX ix_history_entries_recipe_id ON history_entries (recipe_id);
 
 CREATE TABLE local_availability (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -243,16 +244,16 @@ CREATE TABLE local_availability (
 	FOREIGN KEY(region_id) REFERENCES regions (id) ON DELETE CASCADE
 );
 
-CREATE INDEX ix_local_availability_ingredient_id ON local_availability (ingredient_id);
-
 CREATE INDEX ix_local_availability_region_id ON local_availability (region_id);
+
+CREATE INDEX ix_local_availability_ingredient_id ON local_availability (ingredient_id);
 
 CREATE TABLE meal_plans (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
 	user_id INTEGER, 
 	recipe_id INTEGER, 
 	day_of_week ENUM('senin','selasa','rabu','kamis','jumat','sabtu','minggu') NOT NULL, 
-	meal_type ENUM('sarapan','makan-siang','makan-malam') NOT NULL, 
+	meal_type ENUM('sarapan','selingan-pagi','makan-siang','selingan-sore','makan-malam') NOT NULL, 
 	week_id VARCHAR(50), 
 	note VARCHAR(255), 
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, 
@@ -308,20 +309,24 @@ CREATE TABLE prices (
 	price NUMERIC(12, 2) NOT NULL, 
 	unit VARCHAR(20) NOT NULL DEFAULT 'kg', 
 	recorded_date DATE NOT NULL, 
-	source_type ENUM('scraper','manual') NOT NULL, 
+	source_type ENUM('scraper','manual','lapangan') NOT NULL, 
 	source VARCHAR(150) NOT NULL, 
 	status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending', 
+	created_by INTEGER, 
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(ingredient_id) REFERENCES ingredients (id) ON DELETE CASCADE, 
-	FOREIGN KEY(region_id) REFERENCES regions (id) ON DELETE SET NULL
+	FOREIGN KEY(region_id) REFERENCES regions (id) ON DELETE SET NULL, 
+	FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE SET NULL
 );
 
 CREATE INDEX ix_prices_region_id ON prices (region_id);
 
-CREATE INDEX ix_prices_lookup ON prices (ingredient_id, region_id, recorded_date);
+CREATE INDEX ix_prices_created_by ON prices (created_by);
 
 CREATE INDEX ix_prices_ingredient_id ON prices (ingredient_id);
+
+CREATE INDEX ix_prices_lookup ON prices (ingredient_id, region_id, recorded_date);
 
 CREATE TABLE profiles (
 	user_id INTEGER NOT NULL, 
@@ -342,6 +347,14 @@ CREATE TABLE profiles (
 	PRIMARY KEY (user_id), 
 	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, 
 	FOREIGN KEY(region_id) REFERENCES regions (id) ON DELETE SET NULL
+);
+
+CREATE TABLE recipe_food_safety (
+	recipe_id INTEGER NOT NULL, 
+	food_safety_id INTEGER NOT NULL, 
+	PRIMARY KEY (recipe_id, food_safety_id), 
+	FOREIGN KEY(recipe_id) REFERENCES recipes (id) ON DELETE CASCADE, 
+	FOREIGN KEY(food_safety_id) REFERENCES food_safety_info (id) ON DELETE CASCADE
 );
 
 CREATE TABLE recipe_ingredients (
@@ -390,6 +403,21 @@ CREATE TABLE recommendations (
 );
 
 CREATE INDEX ix_recommendations_user_id ON recommendations (user_id);
+
+CREATE TABLE refresh_tokens (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	user_id INTEGER NOT NULL, 
+	token_hash VARCHAR(64) NOT NULL, 
+	expires_at DATETIME NOT NULL, 
+	revoked_at DATETIME, 
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
+CREATE INDEX ix_refresh_tokens_user_id ON refresh_tokens (user_id);
+
+CREATE UNIQUE INDEX ix_refresh_tokens_token_hash ON refresh_tokens (token_hash);
 
 CREATE TABLE seasonal_availability (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -442,7 +470,7 @@ CREATE TABLE price_history (
 	unit VARCHAR(20) NOT NULL DEFAULT 'kg', 
 	recorded_date DATE NOT NULL, 
 	source VARCHAR(150) NOT NULL, 
-	source_type ENUM('scraper','manual') NOT NULL, 
+	source_type ENUM('scraper','manual','lapangan') NOT NULL, 
 	status VARCHAR(20) NOT NULL, 
 	action VARCHAR(30) NOT NULL, 
 	changed_by INTEGER, 
@@ -554,11 +582,3 @@ CREATE TABLE shopping_list_items (
 );
 
 CREATE INDEX ix_shopping_list_items_list_id ON shopping_list_items (list_id);
-
-CREATE TABLE recipe_food_safety (
-	recipe_id INTEGER NOT NULL, 
-	food_safety_id INTEGER NOT NULL, 
-	PRIMARY KEY (recipe_id, food_safety_id), 
-	FOREIGN KEY(recipe_id) REFERENCES recipes (id) ON DELETE CASCADE, 
-	FOREIGN KEY(food_safety_id) REFERENCES food_safety_info (id) ON DELETE CASCADE
-);
