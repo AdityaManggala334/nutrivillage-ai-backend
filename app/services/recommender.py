@@ -207,6 +207,12 @@ def _peringatan_harga(keluaran, snapshot):
             + ', '.join(tanpa[:5]) + (', ...' if len(tanpa) > 5 else '')
             + f'). Biaya paket kemungkinan terlalu rendah — lengkapi di halaman '
               f'admin Harga.']
+    satuan = snapshot.get('satuan_tidak_dikenal') or []
+    if satuan:
+        keluaran['peringatan'] = (keluaran.get('peringatan') or []) + [
+            f'{len(satuan)} satuan bahan tidak dikenali mesin ('
+            + ', '.join(satuan[:5]) + (', ...' if len(satuan) > 5 else '')
+            + f') dan dihitung sebagai 100 g per bagian — periksa di admin Bahan.']
     return keluaran
 
 

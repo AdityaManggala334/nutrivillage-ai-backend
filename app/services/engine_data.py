@@ -29,8 +29,44 @@ SKOR_LOKAL_BAKU = 0.5
 SKOR_MUSIM_BAKU = 0.5
 
 # Satuan -> gram/ml. Bahan cair memakai liter, selain itu kilogram.
-KONVERSI = {'kg': 1000.0, 'liter': 1000.0, 'g': 1.0, 'gram': 1.0,
-            'ml': 1.0, 'pcs': 1.0, 'butir': 55.0, 'sachet': 20.0}
+#
+# Daftar ini dulu tidak memuat satuan pasar yang umum ("1 ikat kangkung",
+# "2 buah jagung"). Karena nilai bawaan `_gram` adalah 1.000 g, satu ikat
+# kangkung dihitung 1 kg dan satu menu melonjak jadi ribuan kkal per porsi.
+# Sekarang satuan pasar didefinisikan, dan satuan tak dikenal dilaporkan lewat
+# `satuan_tidak_dikenal` alih-alih diam-diam dianggap 1 kg.
+KONVERSI = {
+    'kg': 1000.0, 'liter': 1000.0, 'g': 1.0, 'gram': 1.0, 'ml': 1.0,
+    'pcs': 100.0, 'butir': 55.0, 'sachet': 20.0, 'siung': 5.0,
+    'ikat': 250.0, 'buah': 150.0, 'lembar': 5.0, 'ekor': 150.0,
+    'potong': 80.0, 'biji': 10.0, 'ruas': 10.0, 'gelas': 200.0,
+    'cangkir': 240.0, 'sdm': 15.0, 'sdt': 5.0, 'sendok': 15.0,
+}
+
+#: Nilai konservatif untuk satuan yang tidak dikenal: 100 g per bagian, bukan
+#: 1 kg. Tetap dipakai supaya gizi tidak hilang, tapi dilaporkan ke admin.
+GRAM_ASUMSI = 100.0
+
+# Satuan tak dikenal yang ditemui pada perhitungan terakhir (untuk peringatan).
+_satuan_asumsi: set[str] = set()
+
+
+def _gram(jumlah, satuan):
+    nama = str(satuan or 'kg').strip().lower()
+    gram = KONVERSI.get(nama)
+    if gram is None:
+        _satuan_asumsi.add(nama)
+        gram = GRAM_ASUMSI
+    return float(jumlah or 0) * gram
+
+
+def satuan_asumsi_terpakai() -> list[str]:
+    """Satuan yang tidak ada di KONVERSI dan harus diperbaiki admin."""
+    return sorted(_satuan_asumsi)
+
+
+def reset_satuan_asumsi() -> None:
+    _satuan_asumsi.clear()
 
 KUNCI_BOBOT = {'N': 'weight_nutrition', 'A': 'weight_budget',
                'M': 'weight_seasonal', 'L': 'weight_local'}
@@ -135,8 +171,11 @@ def bangun_snapshot(db: Session, region_nama: str | None = None) -> dict:
     """Kembalikan snapshot siap pakai untuk `nutrition_core`.
 
     Bahan tanpa harga tidak digagalkan — dicatat di `bahan_tanpa_harga` supaya
-    API bisa memperingatkan bahwa biaya menunya terlalu rendah.
+    API bisa memperingatkan bahwa biaya menunya terlalu rendah. Satuan bahan
+    yang tidak ada di tabel konversi dihitung dengan asumsi 100 g dan dilaporkan
+    di `satuan_tidak_dikenal`, bukan diam-diam dianggap 1 kg.
     """
+    reset_satuan_asumsi()
     region_id = None
     if region_nama:
         region_id = db.scalar(select(Region.id).where(Region.name == region_nama))
@@ -238,6 +277,7 @@ def bangun_snapshot(db: Session, region_nama: str | None = None) -> dict:
         'bobot': _bobot(db),
         'region_id': region_id,
         'bahan_tanpa_harga': sorted(tanpa_harga),
+        'satuan_tidak_dikenal': satuan_asumsi_terpakai(),
         'jumlah_menu': len(menu),
     }
 

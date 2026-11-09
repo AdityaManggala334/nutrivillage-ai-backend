@@ -45,6 +45,21 @@ LAKI = 'laki-laki'
 # Skor rasio datar pada 85-130% target: melebihi target bukan bonus.
 RASIO_BAWAH, RASIO_ATAS, RASIO_LANDAI = 0.85, 1.30, 0.45
 
+# Batas atas kandidat per slot: menu yang kalorinya di atas 150% target slotnya
+# tidak masuk kolam kandidat. Tanpa ini, satu komponen berkalori raksasa
+# membuat satu waktu makan jadi 4x kebutuhan (temuan audit A2).
+RASIO_KANDIDAT_MAKS = 1.50
+
+# Upgrade mutu berhenti begitu kalori paket mencapai 110% target slotnya.
+# Tanpa ini, sisa anggaran dipakai terus menaikkan energi sampai 150% (temuan
+# pengukuran A2: semua slot mendarat tepat di plafon).
+RASIO_UPGRADE_MAKS = 1.10
+
+# FR-03: budget sebagai batas atas. Paket yang termurah melebihi anggaran
+# sedikit (di bawah toleransi ini) masih dianggap layak dengan penanda
+# over_budget; lebih dari itu, mesin menurunkan kandidat termurah dulu.
+TOLERANSI_ANGGARAN = 1.15
+
 ALIAS_ALERGEN = {'santan': 'kelapa', 'dairy': 'susu', 'laktosa': 'susu'}
 
 KELOMPOK_UMUR = (
@@ -301,13 +316,20 @@ def kolam_slot(layak, slots, tk, tp, mikro, anggaran, bobot, preferences, sudah_
         tk_s = tk * SLOT_SHARE[s]['kcal'] / tot_k
         tp_s = tp * SLOT_SHARE[s]['protein'] / tot_p
         bahan = (murni or raw)
+        # Dua arah: kandidat harus minimal 40% target slot (gizi cukup) DAN
+        # tidak melebihi 150% target slot (tidak menumpuk energi). Kandidat
+        # yang kelebihan tetap masuk bila kolam jadi kosong (lihat fallback
+        # di bawah), supaya alergi berat tidak menggagalkan rekomendasi.
         lolos = [m for m in bahan
                  if m['kalori'] >= GIZI_MINIMUM * tk_s or m['protein'] >= GIZI_MINIMUM * tp_s]
-        kolam[s] = (skor_slot(lolos or bahan, tk_s, tp_s, mikro,
+        proporsional = [m for m in lolos
+                        if m['kalori'] <= RASIO_KANDIDAT_MAKS * tk_s]
+        dipakai_kolam = proporsional or lolos or bahan
+        kolam[s] = (skor_slot(dipakai_kolam, tk_s, tp_s, mikro,
                               anggaran * SLOT_SHARE[s]['biaya'], bobot,
-                              preferences, sudah_dipakai), tk_s, tp_s)
+                              preferences, sudah_dipakai), tk_s, tp_s,
+                    dipakai_kolam)
     return kolam
-
 
 # -------------------------------------------------------------- perakitan
 def rakit_paket(layak, slots, anggaran, tk, tp, mikro, bobot, mode='komponen',
@@ -340,6 +362,13 @@ def rakit_paket(layak, slots, anggaran, tk, tp, mikro, bobot, mode='komponen',
             'saran': f'naikkan anggaran per porsi ke Rp{minimum:,} atau '
                      f'kurangi frekuensi makan'.replace(',', '.'),
         }
+
+    # FR-03: budget sebagai batas atas. Saat paket termurah yang proporsional
+    # tidak muat (over-budget), sisa pekerjaan dipindah ke tahap pemilihan:
+    # kandidat terurut makin murah diutamakan, dan upgrade mutu DImatikan,
+    # sehingga mesin menurunkan biaya alih-alih memakai menu mahal lalu
+    # memberi badge "melebihi anggaran".
+    over_budget = minimum > anggaran * TOLERANSI_ANGGARAN
 
     paket, terisi = [], set()
     sisa = float(anggaran)
@@ -380,8 +409,19 @@ def rakit_paket(layak, slots, anggaran, tk, tp, mikro, bobot, mode='komponen',
         calon = [m for m in kolam[s][0] if m['biaya'] <= plafon]
         if not calon:
             calon = [min(kolam[s][0], key=lambda m: m['biaya'])]
+        if over_budget:
+            # Opsi B: urutkan kandidat termurah dahulu. Skor SAW tetap jadi
+            # dasar pemilihan bila biayanya setara (selisih < 5%), supaya mutu
+            # tidak diorban lebih dari perlu.
+            urut = sorted(calon, key=lambda m: m['biaya'])
+            termurah_biaya = urut[0]['biaya']
+            calon = [m for m in urut if m['biaya'] <= termurah_biaya * 1.05] or urut[:1]
         pasang(s, calon[0], {s} - terisi)
 
+    if over_budget:
+        return paket, 'ok', {'slot_ditinggalkan': ditinggalkan,
+                             'minimum_dibutuhkan': minimum,
+                             'over_budget': True}
     upgrade_paket(paket, kolam, lambda: sisa, tk, tp, sudah_dipakai)
     return paket, 'ok', {'slot_ditinggalkan': ditinggalkan, 'minimum_dibutuhkan': minimum}
 
@@ -406,6 +446,9 @@ def upgrade_paket(paket, kolam, baca_sisa, tk=0.0, tp=0.0, sudah_dipakai=()):
     tahap upgrade mengembalikan pilihan yang baru saja dihindari penalti variasi.
     """
     penalti = set(sudah_dipakai)
+    # Target kalori per slot disimpan di kolam; upgrade berhenti menaikkan
+    # energi begitu paket mencapai RASIO_UPGRADE_MAKS dari target slotnya.
+    target_slot = {s: kal for s, (_, kal, _, _) in kolam.items()}
 
     def mutu(m, n, kalori, protein):
         nilai = _kualitas({'N': n, 'kalori': kalori, 'protein': protein}, tk, tp)
@@ -419,6 +462,11 @@ def upgrade_paket(paket, kolam, baca_sisa, tk=0.0, tp=0.0, sudah_dipakai=()):
             kini = mutu(p['menu_id'], p['skor']['N'], p['kalori'], p['protein'])
             for m in kolam[p['slot']][0]:
                 if m['biaya'] - p['biaya'] > baca_sisa() + 1e-6:
+                    continue
+                # Menu yang kalorinya melewati plafon upgrade slot ini tidak
+                # dianggap perbaikan, walau skornya lebih tinggi.
+                plafon_kalori = RASIO_UPGRADE_MAKS * (target_slot.get(p['slot']) or 0)
+                if m['kalori'] > plafon_kalori:
                     continue
                 untung = mutu(m['menu_id'], m['N'], m['kalori'], m['protein']) - kini
                 if untung <= 1e-6:

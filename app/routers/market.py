@@ -161,14 +161,20 @@ def verify_price(
     db: Session = Depends(get_db),
     admin: User = AdminDep,
 ) -> PriceOut:
-    """FR-23: admin menyetujui/menolak data harga sebelum dipakai engine."""
+    """FR-23: admin menyetujui/menolak data harga sebelum dipakai engine.
+
+    Menyetujui harga mengubah biaya turunan (`recipes.estimated_cost` dan
+    `recipe_nutrition`), jadi gizi menu dihitung ulang di sini. Tanpa ini kartu
+    katalog menampilkan estimasi lama meski rekomendasi sudah memakai harga
+    baru (temuan pengujian A3).
+    """
     price = _get_or_404(db, Price, price_id, "Data harga")
     if payload.status == PriceStatus.PENDING:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Verifikasi harus berstatus approved atau rejected.",
         )
-
+    status_lama = price.status
     price.status = payload.status
     db.add(
         PriceVerification(
@@ -185,6 +191,11 @@ def verify_price(
     db.flush()
     _append_history(db, price, action="changed", changed_by=admin.id)
     db.commit()
+    if payload.status == PriceStatus.APPROVED and status_lama != PriceStatus.APPROVED:
+        # Hanya saat status berubah menjadi approved: itulah satu-satunya
+        # momen harga mulai dipakai engine. Reject tidak perlu hitung ulang.
+        from app.services.engine_data import hitung_gizi_semua_menu
+        hitung_gizi_semua_menu(db)
     db.refresh(price)
     name = db.get(Ingredient, price.ingredient_id)
     return _to_out(price, name.name if name else "-")

@@ -115,6 +115,9 @@ def meta(db: Session = Depends(get_db)) -> dict:
         'bobot_saw': bobot,
         'bobot_dipakai': snapshot['bobot'],
         'bahan_tanpa_harga': snapshot['bahan_tanpa_harga'],
+        # Satuan bahan yang tidak ada di tabel konversi dihitung dengan asumsi
+        # 100 g per bagian. Admin perlu tahu supaya bisa memperbaiki datanya.
+        'satuan_tidak_dikenal': snapshot.get('satuan_tidak_dikenal') or [],
         'catatan_bobot': ('bobot di system_config dinormalkan ulang bila '
                           'jumlahnya bukan 1,0'),
     }
