@@ -174,6 +174,9 @@ class RencanaKeluarga(BaseModel):
     variasi: float = 1.0
     alasan: str | None = None
     saran: str | None = None
+    # B5: detail penjelasan infeasible (angka minimum & slot yang gagal).
+    minimum_dibutuhkan: int | None = None
+    slot_ditinggalkan: list[str] = Field(default_factory=list)
 
 
 class RencanaKelompok(BaseModel):

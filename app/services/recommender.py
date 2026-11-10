@@ -115,7 +115,10 @@ def rekomendasi_keluarga(db: Session, profil: ProfilKeluargaIn, mode: str = 'hid
         if status != 'ok':
             keluaran |= {'status': 'infeasible', 'alasan': catatan['alasan'],
                          'saran': catatan.get('saran'), 'waktu_makan': keluaran['waktu_makan'],
-                         'minimum_dibutuhkan': catatan.get('minimum_dibutuhkan')}
+                         'minimum_dibutuhkan': catatan.get('minimum_dibutuhkan'),
+                         'slot_ditinggalkan': catatan.get('slot_ditinggalkan') or [],
+                         'peringatan': (keluaran.get('peringatan') or []) + [
+                             f"{WAKTU_MAKAN[i]}: {catatan['alasan']}"]}
             return _peringatan_harga(keluaran, snapshot)
         ditinggalkan |= set(catatan.get('slot_ditinggalkan') or [])
         dipakai |= {p['menu_id'] for p in paket}

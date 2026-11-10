@@ -244,7 +244,8 @@ def bangun_snapshot(db: Session, region_nama: str | None = None) -> dict:
             'menu_id': str(r.id), 'kode': r.code or str(r.id),
             'nama_menu': r.name, 'tipe': r.meal_kind or 'komponen',
             'slot': tuple(s for s in core.SLOT_URUTAN if s in slot),
-            'kategori': r.category.value if r.category else '',
+            'kategori': (r.category.value if hasattr(r.category, 'value')
+                         else str(r.category or '')),
             'bahan': daftar_bahan, 'porsi_resep': porsi,
             'gram_bahan': gram_slot,
             'kalori': akum['kalori'] / porsi, 'protein': akum['protein'] / porsi,
