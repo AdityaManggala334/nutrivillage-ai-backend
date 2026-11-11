@@ -27,6 +27,7 @@ from app.models.user import User
 
 from app.schemas.ai import (
     AiExplainByIdRequest,
+    AiExplainPlanRequest,
     AiExplainRequest,
     AiExplainResponse,
     AiHealthResponse,
@@ -193,4 +194,32 @@ def explain_menu(
         source=result.source,
         latency_ms=result.latency_ms,
         saved_id=saved_id,
+    )
+
+@router.post("/explain-plan", response_model=AiExplainResponse)
+def ai_explain_plan(
+    payload: AiExplainPlanRequest,
+    user: User | None = Depends(require_llm_user),
+) -> AiExplainResponse:
+    """FR-03: narasi satu paket makan penuh (bukan per resep).
+
+    Tidak memakai cache `llm_explanations` karena paket bergantung pada
+    parameter pengguna; kuota 30/jam dari `require_llm_user` menahan biaya.
+    """
+    context = llm.PlanContext(
+        total_biaya=payload.total_biaya,
+        anggaran=payload.anggaran,
+        energi_pct=payload.energi_pct,
+        protein_pct=payload.protein_pct,
+        daftar_menu=tuple(payload.daftar_menu),
+        n_waktu_makan=payload.n_waktu_makan,
+    )
+    hasil = llm.generate_plan_explanation(context)
+    return AiExplainResponse(
+        explanation=hasil.text,
+        model=hasil.model,
+        source=hasil.source,
+        latency_ms=hasil.latency_ms,
+        saved_id=None,
+        recipe_id=None,
     )

@@ -273,3 +273,109 @@ def check_health() -> dict[str, object]:
             "latency_ms": _elapsed_ms(started),
             "detail": str(exc)[:200],
         }
+
+@dataclass(frozen=True)
+class PlanContext:
+    """Konteks ringkas satu paket makan penuh (FR-03: narasi hasil engine)."""
+    total_biaya: float | None = None
+    anggaran: float | None = None
+    energi_pct: float | None = None
+    protein_pct: float | None = None
+    daftar_menu: tuple[str, ...] = ()
+    n_waktu_makan: int = 0
+
+
+def _plan_prompt(context: PlanContext) -> str:
+    lines = [
+        f"Paket makan {context.n_waktu_makan} waktu untuk satu hari keluarga.",
+        "Menu per waktu makan:",
+    ]
+    lines.extend(f"- {row}" for row in context.daftar_menu[:6])
+    if context.energi_pct is not None:
+        lines.append(f"Pemenuhan energi: {context.energi_pct:.0f}% dari target harian")
+    if context.protein_pct is not None:
+        lines.append(f"Pemenuhan protein: {context.protein_pct:.0f}% dari target harian")
+    if context.total_biaya is not None:
+        lines.append(f"Total biaya: {_rupiah(context.total_biaya)}")
+    if context.anggaran is not None:
+        lines.append(f"Anggaran harian: {_rupiah(context.anggaran)}")
+    lines.append(
+        "Tulis 2-3 kalimat: mengapa kombinasi ini cocok untuk kebutuhan gizi "
+        "dan anggaran pengguna. Sebutkan kekuatan utamanya (misal protein hewani "
+        "atau sayur lokal) tanpa mengarang angka di luar data di atas."
+    )
+    return "\n".join(lines)
+
+
+def plan_fallback(context: PlanContext) -> str:
+    """Narasi pengganti bila LLM tidak tersedia (tetap informatif)."""
+    kalimat = [
+        f"Paket {context.n_waktu_makan} waktu makan ini disusun agar memenuhi "
+        "kebutuhan gizi harian keluarga dengan biaya terkendali."
+    ]
+    if context.total_biaya is not None and context.anggaran is not None:
+        status = "masih dalam" if context.total_biaya <= context.anggaran else "sedikit di atas"
+        kalimat.append(
+            f"Total biayanya {_rupiah(context.total_biaya)}, {status} anggaran "
+            f"{_rupiah(context.anggaran)}."
+        )
+    if context.energi_pct is not None:
+        kalimat.append(
+            f"Paket ini memenuhi sekitar {context.energi_pct:.0f}% kebutuhan energi "
+            f"dan {context.protein_pct or 0:.0f}% protein harian."
+        )
+    if context.daftar_menu:
+        kunci = ", ".join(
+            context.daftar_menu[0].split(": ")[-1].split(", ")[:3]
+        )
+        kalimat.append(f"Menu utamanya antara lain {kunci}.")
+    kalimat.append("Semua bahan mudah ditemukan di pasar lokal Madiun.")
+    return " ".join(kalimat)
+
+
+def generate_plan_explanation(context: PlanContext) -> LlmResult:
+    """Narasi satu paket makan penuh; fallback bila LLM tidak tersedia."""
+    started = time.perf_counter()
+    if not is_configured():
+        return LlmResult(
+            text=plan_fallback(context),
+            model="fallback",
+            source="fallback",
+            latency_ms=_elapsed_ms(started),
+        )
+    payload = {
+        "model": settings.llm_model,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": _plan_prompt(context)},
+        ],
+        "temperature": 0.3,
+        "max_tokens": 160,
+        "stream": False,
+    }
+    request = urllib.request.Request(
+        _completion_url(),
+        data=json.dumps(payload).encode("utf-8"),
+        headers=_headers(),
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=settings.llm_timeout_seconds) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        text = _extract_text(body)
+        if not text:
+            raise ValueError("Teks penjelasan kosong")
+        return LlmResult(
+            text=text,
+            model=settings.llm_model,
+            source="llm",
+            latency_ms=_elapsed_ms(started),
+        )
+    except (OSError, ValueError, http.client.HTTPException) as exc:
+        logger.warning("LLM tidak dapat dipakai (%s) - memakai teks fallback", exc)
+        return LlmResult(
+            text=plan_fallback(context),
+            model="fallback",
+            source="fallback",
+            latency_ms=_elapsed_ms(started),
+        )

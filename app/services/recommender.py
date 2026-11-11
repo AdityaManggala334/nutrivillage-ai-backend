@@ -16,11 +16,23 @@ from sqlalchemy.orm import Session
 
 from app.schemas.recommendation import (
     DaftarBelanja, DaftarBelanjaBaris, ProfilKeluargaIn, ProfilSekolahIn,
+    SLOT_SEMUA,
 )
 from app.services import engine_data, nutrition_core as core
 
 #: Nama waktu makan. FR-05 revisi: 5 waktu makan penuh (bukan selingan).
 WAKTU_MAKAN = core.WAKTU_MAKAN_LABEL
+#: FR-03: tujuan gizi mengubah bobot SAW; rendah-lemak menyaring lemak.
+BOBOT_GOAL = {
+    'hemat': {'N': 0.30, 'A': 0.45, 'M': 0.125, 'L': 0.125},
+    'tinggi-protein': {'N': 0.55, 'A': 0.20, 'M': 0.125, 'L': 0.125},
+}
+BATAS_LEMAK_PCT = 0.30  # lemak maksimum 30% dari kalori menu (rendah-lemak)
+WAKTU_MAKAN_LABEL_MAP = {
+    'sarapan': 'Sarapan', 'selingan_pagi': 'Selingan Pagi',
+    'makan_siang': 'Makan Siang', 'selingan_sore': 'Selingan Sore',
+    'makan_malam': 'Makan Malam',
+}
 #: Andil anggaran tiap waktu makan terhadap kebutuhan harian (jumlah = 1).
 SHARE_WAKTU_MAKAN = core.SHARE_WAKTU_MAKAN
 
@@ -103,14 +115,21 @@ def rekomendasi_keluarga(db: Session, profil: ProfilKeluargaIn, mode: str = 'hid
 
     layak = core.saring(list(snapshot['menu'].values()), alergi,
                        profil.avoided_ingredients)
+    goal = getattr(profil, 'goal', 'seimbang')
+    if goal == 'rendah-lemak':
+        layak = [m for m in layak
+                 if m['lemak'] * 9 <= BATAS_LEMAK_PCT * max(m['kalori'], 1)]
+    bobot = BOBOT_GOAL.get(goal) or snapshot['bobot']
     dipakai, ditinggalkan = set(), set()
-    # Anggaran harian dibagi ke tiap waktu makan sesuai andilnya
-    # (sarapan/siang/malam besar, dua selingan ringan).
-    andil = core.SHARE_WAKTU_MAKAN
-    for i in range(info['n_utama']):
+    # FR-05 revisi: slot waktu makan dipilih pengguna, andil anggaran RATA
+    # (100% / n) agar target gizi per porsi yang memang rata tidak bentrok
+    # dengan pembagian uang (temuan pengujian: selingan 10% tidak cukup).
+    slot_dipakai = profil.meal_slots or tuple(SLOT_SEMUA[:info['n_utama']])
+    andil = tuple(1.0 / len(slot_dipakai) for _ in slot_dipakai)
+    for i, _slot in enumerate(slot_dipakai):
         anggaran_waktu = profil.daily_budget * andil[i] / max(info['faktor'], 1e-6)
         paket, status, catatan = core.rakit_paket(
-            layak, slots, anggaran_waktu, tk, tp, mikro, snapshot['bobot'], mode=mode,
+            layak, slots, anggaran_waktu, tk, tp, mikro, bobot, mode=mode,
             preferences=profil.preferences, sudah_dipakai=dipakai)
         if status != 'ok':
             keluaran |= {'status': 'infeasible', 'alasan': catatan['alasan'],
@@ -123,7 +142,7 @@ def rekomendasi_keluarga(db: Session, profil: ProfilKeluargaIn, mode: str = 'hid
         ditinggalkan |= set(catatan.get('slot_ditinggalkan') or [])
         dipakai |= {p['menu_id'] for p in paket}
         keluaran['waktu_makan'].append({
-            'waktu': WAKTU_MAKAN[i], 'anggaran_per_porsi': anggaran_waktu,
+            'waktu': WAKTU_MAKAN_LABEL_MAP[_slot], 'anggaran_per_porsi': anggaran_waktu,
             'paket': [_item(p) for p in paket],
             'ringkas': core.ringkas_paket(paket, anggaran_waktu, tk, tp),
         })

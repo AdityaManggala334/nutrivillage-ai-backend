@@ -16,6 +16,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 Gender = Literal['laki-laki', 'perempuan']
 Aktivitas = Literal['rendah', 'sedang', 'tinggi']
 LevelSiswa = Literal['sd_1_3', 'sd_4_6', 'smp', 'sma', 'lainnya']
+#: Nama slot waktu makan yang dikenali mesin (urut waktu).
+MealSlot = Literal['sarapan', 'selingan_pagi', 'makan_siang', 'selingan_sore', 'makan_malam']
+#: Tujuan gizi Explore (FR-03): mengubah bobot SAW / batas lemak.
+Goal = Literal['hemat', 'seimbang', 'tinggi-protein', 'rendah-lemak']
+SLOT_SEMUA: tuple[str, ...] = ('sarapan', 'selingan_pagi', 'makan_siang', 'selingan_sore', 'makan_malam')
 
 #: Alergen yang dikenali mesin. `santan` diturunkan ke `kelapa` oleh mesin.
 ALERGEN_DIKENAL = {
@@ -51,10 +56,25 @@ class ProfilKeluargaIn(BaseModel):
     region: str = Field(min_length=3, max_length=100)
     meals_per_day: int = Field(default=3, ge=1, le=5,
                               description='Frekuensi makan per hari (1-5).')
+    # FR-05 revisi: pengguna memilih slot waktu makan secara eksplisit.
+    # Kosong = pakai meals_per_day slot pertama (kompatibel API lama/mobile).
+    meal_slots: list[MealSlot] = Field(default_factory=list)
     include_susu: bool = True
+    goal: Goal = 'seimbang'
     preferences: list[str] = Field(default_factory=list)
     avoided_ingredients: list[str] = Field(default_factory=list)
     members: list[AnggotaIn] = Field(min_length=1, max_length=20)
+
+    @model_validator(mode='after')
+    def _validasi_slot(self) -> 'ProfilKeluargaIn':
+        if self.meal_slots:
+            if len(self.meal_slots) != len(set(self.meal_slots)):
+                raise ValueError('Slot waktu makan tidak boleh duplikat.')
+            if len(self.meal_slots) > 5:
+                raise ValueError('Slot waktu makan maksimum 5.')
+            urut = [x for x in SLOT_SEMUA if x in self.meal_slots]
+            self.meal_slots = urut
+        return self
 
     @model_validator(mode='after')
     def _gabungkan_alergen(self) -> 'ProfilKeluargaIn':

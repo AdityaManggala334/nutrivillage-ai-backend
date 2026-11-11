@@ -65,3 +65,16 @@ class AiHealthResponse(BaseModel):
     models: list[str] = Field(default_factory=list)
     latency_ms: int
     detail: str | None = None
+
+class AiExplainPlanRequest(BaseModel):
+    """FR-03: narasi satu paket makan penuh dari hasil engine.
+
+    Angka dikirim frontend dari respons engine yang sama yang ditampilkan
+    di layar, sehingga narasi tidak bisa berbeda dengan tampilan.
+    """
+    n_waktu_makan: int = Field(ge=1, le=5)
+    energi_pct: float | None = Field(default=None, ge=0, le=500)
+    protein_pct: float | None = Field(default=None, ge=0, le=500)
+    total_biaya: float | None = Field(default=None, ge=0)
+    anggaran: float | None = Field(default=None, ge=0)
+    daftar_menu: list[str] = Field(default_factory=list, max_length=8)

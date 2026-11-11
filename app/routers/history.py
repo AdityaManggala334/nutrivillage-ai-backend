@@ -110,6 +110,27 @@ def save_history(
     return _to_out(existing, _favorite_ids(db, user.id), recipe)
 
 
+@router.get("/by-recipe/{recipe_id}", response_model=HistoryEntryOut | None)
+def get_by_recipe(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> HistoryEntryOut | None:
+    """Entri riwayat user untuk satu resep (dipakai toggle favorit di detail)."""
+    recipe = db.get(Recipe, recipe_id)
+    if recipe is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resep tidak ditemukan.")
+    entry = (
+        db.query(HistoryEntry)
+        .filter(HistoryEntry.user_id == user.id, HistoryEntry.recipe_id == recipe_id)
+        .order_by(HistoryEntry.id.desc())
+        .first()
+    )
+    if entry is None:
+        return None
+    return _to_out(entry, _favorite_ids(db, user.id), recipe)
+
+
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_history(
     entry_id: int,
