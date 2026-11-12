@@ -16,12 +16,9 @@ from sqlalchemy.orm import Session
 
 from app.schemas.recommendation import (
     DaftarBelanja, DaftarBelanjaBaris, ProfilKeluargaIn, ProfilSekolahIn,
-    SLOT_SEMUA,
 )
 from app.services import engine_data, nutrition_core as core
 
-#: Nama waktu makan. FR-05 revisi: 5 waktu makan penuh (bukan selingan).
-WAKTU_MAKAN = core.WAKTU_MAKAN_LABEL
 #: FR-03: tujuan gizi mengubah bobot SAW; rendah-lemak menyaring lemak.
 BOBOT_GOAL = {
     'hemat': {'N': 0.30, 'A': 0.45, 'M': 0.125, 'L': 0.125},
@@ -33,9 +30,6 @@ WAKTU_MAKAN_LABEL_MAP = {
     'makan_siang': 'Makan Siang', 'selingan_sore': 'Selingan Sore',
     'makan_malam': 'Makan Malam',
 }
-#: Andil anggaran tiap waktu makan terhadap kebutuhan harian (jumlah = 1).
-SHARE_WAKTU_MAKAN = core.SHARE_WAKTU_MAKAN
-
 #: Kelompok penerima manfaat SPPG -> kelompok umur acuan AKG & anggaran BGN.
 SPPG_LEVEL = {
     'sd_1_3': {'age_group': '7-9 tahun', 'label': 'SD kelas 1-3'},
@@ -59,17 +53,14 @@ def _slot_wajib(alergi, include_susu=True):
     return slots
 
 
-def _target_per_porsi(snapshot, profil, info):
-    """Target energi/protein/mikro untuk 1 porsi dewasa pada 1 waktu makan.
-
-    FR-05 revisi: tiap waktu makan punya andil energi berbeda
-    (`SHARE_WAKTU_MAKAN`), tapi rakit_paket bekerja per porsi dewasa yang
-    setara, jadi target per porsi tetap rata. Andil dipakai untuk membagi
-    anggaran harian ke tiap waktu makan (lihat rekomendasi_keluarga).
-    """
-    bagi = info['porsi_utama'] or 1.0
-    mikro = {k: v / bagi for k, v in info['mikro_per_porsi'].items()}
-    return (info['energi'] / bagi, info['protein'] / bagi, mikro)
+def _target_waktu(info, andil):
+    """Target per porsi dewasa untuk satu waktu makan sesuai andilnya."""
+    faktor = info['faktor'] or 1.0
+    return (
+        info['energi'] * andil / faktor,
+        info['protein'] * andil / faktor,
+        {k: v * andil / faktor for k, v in info['mikro'].items()},
+    )
 
 
 def _item(m) -> dict:
@@ -87,12 +78,59 @@ def _item(m) -> dict:
     }
 
 
+def _rakit_selingan(layak, anggaran, tk, tp, mikro, bobot, preferences, dipakai):
+    """Selingan = satu menu ringan, bukan paket 6 komponen.
+
+    Memaksakan paket lengkap pada andil 10% membuat seluruh rekomendasi
+    infeasible; selingan cukup buah/susu/nabati yang muat anggarannya.
+    """
+    ringan = [m for m in layak if m['tipe'] == 'komponen'
+              and m['slot'] and set(m['slot']) <= {'buah', 'susu', 'nabati'}]
+    kandidat = ringan or [m for m in layak if m['tipe'] == 'komponen']
+    if not kandidat:
+        return [], {'alasan': 'tidak ada menu selingan yang lolos filter'}
+    dinilai = core.skor_slot(kandidat, tk, tp, mikro, anggaran, bobot,
+                             preferences, dipakai)
+    muat = [m for m in dinilai if m['biaya'] <= anggaran]
+    pilih = muat[0] if muat else dinilai[0]
+    paket = [{
+        'slot': 'selingan', 'menu_id': pilih['menu_id'],
+        'nama_menu': pilih['nama_menu'], 'menutup': sorted(pilih['slot']),
+        'biaya': round(pilih['biaya']), 'kalori': round(pilih['kalori']),
+        'protein': round(pilih['protein'], 1),
+        'kalsium_mg': round(pilih['kalsium_mg']), 'besi_mg': round(pilih['besi_mg'], 1),
+        'vitamin_a_mcg': round(pilih['vitamin_a_mcg']),
+        'vitamin_c_mg': round(pilih['vitamin_c_mg']),
+        'gula_g': round(pilih['gula_g'], 1), 'natrium_mg': round(pilih['natrium_mg']),
+        'skor': {k: round(pilih[k], 3) for k in ('N', 'A', 'M', 'L', 'SAW')},
+        'alergen': list(pilih['alergen']),
+    }]
+    return paket, {'slot_ditinggalkan': []}
+
+
+def _paket_dengan_cadangan(layak, slots, anggaran, tk, tp, mikro, bobot,
+                           mode, preferences, dipakai):
+    """Coba paket lengkap; bila anggaran sempit, lepas slot opsional.
+
+    Slot susu/buah dilepas berurutan dan dicatat di `penyesuaian`, bukan
+    dihapus diam-diam. SPPG tidak memakai jalur ini.
+    """
+    catatan = {}
+    for buang in ((), ('susu',), ('buah',), ('susu', 'buah')):
+        sisa_slot = [s for s in slots if s not in buang]
+        paket, _status, catatan = core.rakit_paket(
+            layak, sisa_slot, anggaran, tk, tp, mikro, bobot, mode=mode,
+            preferences=preferences, sudah_dipakai=dipakai)
+        if paket:
+            return paket, catatan, buang
+    return [], catatan, ()
+
+
 def rekomendasi_keluarga(db: Session, profil: ProfilKeluargaIn, mode: str = 'hidangan') -> dict:
     """Rencana makan keluarga: paket per waktu makan + peringatan gizinya."""
     snapshot = engine_data.bangun_snapshot(db, profil.region)
     alergi = core.normal_alergen(profil.alergi)
     info = core.target_keluarga(snapshot, profil)
-    tk, tp, mikro = _target_per_porsi(snapshot, profil, info)
     slots = _slot_wajib(alergi, profil.include_susu)
     anggaran = info['anggaran_per_porsi']
 
@@ -102,8 +140,10 @@ def rekomendasi_keluarga(db: Session, profil: ProfilKeluargaIn, mode: str = 'hid
         'anggaran_harian': profil.daily_budget,
         'target': {'energi_harian': info['energi'], 'protein_harian': info['protein'],
                    'porsi_dewasa_per_makan': info['porsi_utama'],
-                   'energi_per_porsi': round(tk, 1), 'protein_per_porsi': round(tp, 2),
-                   'mikro_per_porsi': {k: round(v, 1) for k, v in mikro.items()},
+                   # Rata-rata per porsi dewasa (kompatibilitas API lama).
+                   'energi_per_porsi': round(info['energi'] / (info['porsi_utama'] or 1), 1),
+                   'protein_per_porsi': round(info['protein'] / (info['porsi_utama'] or 1), 2),
+                   'andil_waktu_makan': list(info['andil']),
                    'anggota': [_gabung_antropometri(snapshot, r, a)
                                for r, a in zip(info['anggota'], profil.members)]},
     }
@@ -121,38 +161,48 @@ def rekomendasi_keluarga(db: Session, profil: ProfilKeluargaIn, mode: str = 'hid
                  if m['lemak'] * 9 <= BATAS_LEMAK_PCT * max(m['kalori'], 1)]
     bobot = BOBOT_GOAL.get(goal) or snapshot['bobot']
     dipakai, ditinggalkan = set(), set()
-    # FR-05 revisi: slot waktu makan dipilih pengguna, andil anggaran RATA
-    # (100% / n) agar target gizi per porsi yang memang rata tidak bentrok
-    # dengan pembagian uang (temuan pengujian: selingan 10% tidak cukup).
-    slot_dipakai = profil.meal_slots or tuple(SLOT_SEMUA[:info['n_utama']])
-    andil = tuple(1.0 / len(slot_dipakai) for _ in slot_dipakai)
+    # FR-05 revisi: slot dipilih pengguna (atau bawaan sesuai frekuensi), dan
+    # anggaran/target dibagi memakai andil pola makan MEAL_SHARES.
+    slot_dipakai = tuple(profil.meal_slots) or core.default_meal_slots(info['n_utama'])
+    andil = core.meal_shares(len(slot_dipakai))
     for i, _slot in enumerate(slot_dipakai):
         anggaran_waktu = profil.daily_budget * andil[i] / max(info['faktor'], 1e-6)
-        paket, status, catatan = core.rakit_paket(
-            layak, slots, anggaran_waktu, tk, tp, mikro, bobot, mode=mode,
-            preferences=profil.preferences, sudah_dipakai=dipakai)
-        if status != 'ok':
-            keluaran |= {'status': 'infeasible', 'alasan': catatan['alasan'],
-                         'saran': catatan.get('saran'), 'waktu_makan': keluaran['waktu_makan'],
+        tk, tp, mikro = _target_waktu(info, andil[i])
+        if _slot in core.SELINGAN_SLOTS:
+            paket, catatan = _rakit_selingan(
+                layak, anggaran_waktu, tk, tp, mikro, bobot,
+                profil.preferences, dipakai)
+        else:
+            paket, catatan, buang = _paket_dengan_cadangan(
+                layak, slots, anggaran_waktu, tk, tp, mikro, bobot, mode,
+                profil.preferences, dipakai)
+            if buang:
+                keluaran['penyesuaian'].append(
+                    f"{WAKTU_MAKAN_LABEL_MAP[_slot]}: slot "
+                    f"{', '.join(buang)} dilewati karena anggaran waktu makan "
+                    f"tidak mencukupi paket lengkap.")
+        if not paket:
+            catatan = catatan or {}
+            keluaran |= {'status': 'infeasible',
+                         'alasan': catatan.get('alasan', 'tidak ada menu yang muat'),
+                         'saran': catatan.get('saran'),
+                         'waktu_makan': keluaran['waktu_makan'],
                          'minimum_dibutuhkan': catatan.get('minimum_dibutuhkan'),
                          'slot_ditinggalkan': catatan.get('slot_ditinggalkan') or [],
                          'peringatan': (keluaran.get('peringatan') or []) + [
-                             f"{WAKTU_MAKAN[i]}: {catatan['alasan']}"]}
+                             f"{WAKTU_MAKAN_LABEL_MAP[_slot]}: "
+                             f"{catatan.get('alasan', 'anggaran tidak cukup')}"]}
             return _peringatan_harga(keluaran, snapshot)
         ditinggalkan |= set(catatan.get('slot_ditinggalkan') or [])
         dipakai |= {p['menu_id'] for p in paket}
         keluaran['waktu_makan'].append({
-            'waktu': WAKTU_MAKAN_LABEL_MAP[_slot], 'anggaran_per_porsi': anggaran_waktu,
+            'waktu': WAKTU_MAKAN_LABEL_MAP[_slot],
+            'andil': round(andil[i], 3),
+            'anggaran_per_porsi': round(anggaran_waktu),
+            'target_kcal': round(tk, 1), 'target_protein': round(tp, 2),
             'paket': [_item(p) for p in paket],
             'ringkas': core.ringkas_paket(paket, anggaran_waktu, tk, tp),
         })
-
-    for j in range(info['n_selingan']):
-        batasan = anggaran * 0.35
-        selingan = _selingan(layak, keluaran, batasan, tk, tp, snapshot['bobot'])
-        if selingan:
-            keluaran['selingan'].append(selingan)
-            dipakai.add(str(selingan['recipe_id']))
 
     if ditinggalkan:
         nama = ', '.join(sorted(ditinggalkan))
@@ -265,6 +315,7 @@ def rekomendasi_sppg(db: Session, sekolah: ProfilSekolahIn) -> dict:
         baris = {'level': g.level, 'label': acuan['label'], 'siswa': g.student_count,
                  'anggaran_per_porsi': anggaran, 'target_kcal': round(tk, 1),
                  'target_protein': round(tp, 2)}
+        keluaran['total_siswa'] += g.student_count
         if status != 'ok':
             keluaran['peringatan'].append(
                 f"{acuan['label']}: {status} — {catatan['alasan']} "
@@ -284,7 +335,6 @@ def rekomendasi_sppg(db: Session, sekolah: ProfilSekolahIn) -> dict:
                 f"{acuan['label']}: slot "
                 f"{', '.join(catatan['slot_ditinggalkan'])} tidak punya kandidat "
                 f"yang lolos alergi; porsinya dibagi ulang.")
-        keluaran['total_siswa'] += g.student_count
         keluaran['total_biaya'] += baris['biaya_batch']
         keluaran['kelompok'].append(baris)
 

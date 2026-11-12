@@ -29,7 +29,7 @@ from app.models.catalog import (  # noqa: E402
 )
 from app.models.enums import MbgSlot  # noqa: E402
 from app.models.planning import SystemConfig  # noqa: E402
-from app.models.price import Price  # noqa: E402
+from app.models.price import Price, PriceHistory  # noqa: E402
 from app.models.recipe import (  # noqa: E402
     Recipe, RecipeIngredient, RecipeNutrition, recipe_food_safety,
 )
@@ -40,7 +40,8 @@ from app.services.dataset_import import DatasetTidakValid, impor_teks  # noqa: E
 from app.services.engine_data import hitung_gizi_semua_menu  # noqa: E402
 from scripts.import_nutrivillage_dataset import BAWAAN, muat  # noqa: E402
 
-TABEL = [Region, Ingredient, NutritionFact, Price, Recipe, RecipeIngredient,
+TABEL = [Region, Ingredient, NutritionFact, Price, PriceHistory,
+         Recipe, RecipeIngredient,
          RecipeNutrition, SeasonalAvailability, LocalAvailability,
          NutritionStandard, AnthropometryStandard, SystemConfig,
          FoodSafetyInfo, recipe_food_safety]
@@ -221,13 +222,27 @@ def test_batas_gula_dan_natrium_dipakai(db):
             assert item['gula_g'] <= 15.001 or item['natrium_mg'] <= 600.001
 
 
-def test_frekuensi_makan_mengubah_anggaran_per_porsi(db):
-    kecil = recommender.rekomendasi_keluarga(
-        db, ProfilKeluargaIn(**{**KELUARGA_5, 'meals_per_day': 2}))
-    banyak = recommender.rekomendasi_keluarga(
+def test_andil_waktu_makan_mengikuti_frekuensi(db):
+    """5 waktu makan: 20/10/35/10/25, selingan ringan, total tetap 100%."""
+    r = recommender.rekomendasi_keluarga(
         db, ProfilKeluargaIn(**{**KELUARGA_5, 'meals_per_day': 5}))
-    assert kecil['anggaran_per_porsi'] > banyak['anggaran_per_porsi']
-    assert banyak['selingan'], 'frekuensi >3 harus memunculkan selingan'
+    assert r['status'] == 'ok', r
+    andil = [w['andil'] for w in r['waktu_makan']]
+    assert andil == [0.2, 0.1, 0.35, 0.1, 0.25]
+    assert abs(sum(andil) - 1.0) < 1e-9
+    assert [w['waktu'] for w in r['waktu_makan']] == [
+        'Sarapan', 'Selingan Pagi', 'Makan Siang', 'Selingan Sore', 'Makan Malam']
+    # Selingan cukup satu menu; makan siang tetap yang terbesar.
+    assert all(len(w['paket']) == 1 for w in r['waktu_makan']
+               if w['waktu'].startswith('Selingan'))
+    assert (r['waktu_makan'][2]['anggaran_per_porsi']
+            > r['waktu_makan'][0]['anggaran_per_porsi'])
+
+    for n, pola in ((2, [0.45, 0.55]), (3, [0.25, 0.40, 0.35]),
+                    (4, [0.25, 0.35, 0.15, 0.25])):
+        hasil = recommender.rekomendasi_keluarga(
+            db, ProfilKeluargaIn(**{**KELUARGA_5, 'meals_per_day': n}))
+        assert [w['andil'] for w in hasil['waktu_makan']] == pola
 
 
 def test_anggaran_tidak_cukup_ditolak_dengan_angka(db):
@@ -301,14 +316,20 @@ def test_bobot_saw_dari_konfigurasi_admin(db):
 # ---------------------------------------------------------------- SPPG
 def test_sppg_per_kelompok_dan_batch(db):
     r = recommender.rekomendasi_sppg(db, ProfilSekolahIn(**SEKOLAH))
-    assert r['status'] == 'ok', r
     assert len(r['kelompok']) == 2
     sd1, sd4 = r['kelompok']
     assert sd1['anggaran_per_porsi'] == 8000 and sd4['anggaran_per_porsi'] == 10000
-    for k in (sd1, sd4):
-        assert k['ringkas']['patuh_anggaran'] is True
-        assert k['biaya_batch'] <= k['anggaran_batch']
-        assert len(k['paket']) == 6
+    assert sd4['status'] == 'ok'
+    for k in r['kelompok']:
+        if k['status'] == 'ok':
+            assert k['ringkas']['patuh_anggaran'] is True
+            assert k['biaya_batch'] <= k['anggaran_batch']
+        else:
+            # Anggaran BGN Rp8.000 tetap dipakai; mesin wajib jujur bila
+            # biaya minimum paket lengkap melewatinya.
+            assert k['status'] == 'infeasible'
+            assert any(k['label'] in p and 'minimum' in p for p in r['peringatan'])
+    assert sd1['status'] in ('ok', 'infeasible')
     assert r['total_siswa'] == 220
 
 
@@ -415,6 +436,37 @@ def test_grid_menyimpan_alergen_baru(db):
     assert ulang.allergens == ['kedelai', 'kacang']
 
 
+def test_impor_membersihkan_bahan_dan_menu_seed_lama():
+    """Bahan seed lama tidak boleh memicu peringatan harga palsu."""
+    from sqlalchemy import select
+    from app.models.enums import IngredientCategory, PriceSourceType, PriceStatus, RecipeCategory
+
+    engine = create_engine('sqlite://')
+    Base.metadata.create_all(
+        engine, tables=[t if isinstance(t, Table) else t.__table__ for t in TABEL])
+    Session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with Session() as sesi:
+        lama = Ingredient(code='bahan-beras', name='Beras',
+                          category=IngredientCategory.POKOK, unit='kg')
+        sesi.add(lama)
+        sesi.flush()
+        sesi.add(Price(ingredient_id=lama.id, price=15000, unit='kg',
+                       source_type=PriceSourceType.MANUAL, source='seed',
+                       status=PriceStatus.PENDING))
+        resep = Recipe(code='resep-nasi-pecel', name='Nasi Pecel Madiun',
+                       category=RecipeCategory.MAKANAN_UTAMA, meal_kind='komponen')
+        sesi.add(resep)
+        sesi.flush()
+        sesi.add(RecipeIngredient(recipe_id=resep.id, ingredient_id=lama.id,
+                                  name='Beras', quantity=0.3, unit='kg'))
+        sesi.flush()
+
+        laporan = impor_teks(sesi, muat(BAWAAN), region_nama='Kabupaten Madiun')
+        assert laporan['dihapus'].get('menu', 0) >= 1
+        assert sesi.scalar(select(Ingredient).where(Ingredient.code == 'bahan-beras')) is None
+        assert laporan['harga']['bahan_tanpa_harga'] == 0, laporan['harga']
+
+
 def test_upgrade_tidak_mengembalikan_menu_yang_sudah_dipakai():
     """Tahap upgrade pernah membatalkan penalti variasi dan mengulang menu."""
     from app.services import nutrition_core as core
@@ -432,7 +484,8 @@ def test_upgrade_tidak_mengembalikan_menu_yang_sudah_dipakai():
               'kalsium_mg': 0, 'besi_mg': 0, 'vitamin_a_mcg': 0,
               'vitamin_c_mg': 0, 'skor': {'N': 0.8, 'A': 0, 'M': 0,
                                           'L': 0, 'SAW': 0.8}}]
-    kolam = {'hewani': ([kandidat('a', 0.9), kandidat('b', 0.8)], 1000.0, 30.0)}
+    kolam = {'hewani': ([kandidat('a', 0.9), kandidat('b', 0.8)], 1000.0, 30.0,
+                        [kandidat('a', 0.9), kandidat('b', 0.8)])}
 
     core.upgrade_paket(paket, kolam, lambda: 10_000)
     assert paket[0]['menu_id'] == 'a'  # tanpa konteks, mutu menang

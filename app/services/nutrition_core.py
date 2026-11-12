@@ -23,13 +23,42 @@ WAKTU_MAKAN_LABEL = (
     'Sarapan', 'Selingan Pagi', 'Makan Siang', 'Selingan Sore', 'Makan Malam',
 )
 
-#: Andil energi tiap waktu makan terhadap kebutuhan harian (jumlah = 1,0).
-#: Pola keluarga Indonesia: sarapan & makan siang paling besar, dua selingan
-#: ringan. Dipakai untuk membagi target energi ke tiap waktu makan.
-SHARE_WAKTU_MAKAN = (0.25, 0.10, 0.35, 0.10, 0.20)
+#: Andil energi & anggaran tiap waktu makan, per jumlah waktu makan (jumlah = 1,0).
+#: Makan siang selalu terbesar; selingan hanya 10-15% karena bukan makan utama.
+MEAL_SHARES = {
+    1: (1.0,),
+    2: (0.45, 0.55),
+    3: (0.25, 0.40, 0.35),
+    4: (0.25, 0.35, 0.15, 0.25),
+    5: (0.20, 0.10, 0.35, 0.10, 0.25),
+}
+
+#: Slot waktu makan bawaan bila pengguna tidak memilih sendiri.
+DEFAULT_MEAL_SLOTS = {
+    1: ('sarapan',),
+    2: ('sarapan', 'makan_malam'),
+    3: ('sarapan', 'makan_siang', 'makan_malam'),
+    4: ('sarapan', 'makan_siang', 'selingan_sore', 'makan_malam'),
+    5: ('sarapan', 'selingan_pagi', 'makan_siang', 'selingan_sore', 'makan_malam'),
+}
+
+#: Slot selingan: cukup satu menu ringan, bukan paket 6 komponen.
+SELINGAN_SLOTS = frozenset(('selingan_pagi', 'selingan_sore'))
+
+#: Andil pola 5 waktu makan (kompatibilitas pemanggil lama).
+SHARE_WAKTU_MAKAN = MEAL_SHARES[5]
 
 #: Berapa banyak waktu makan yang didukung mesin. SKPL V4 FR-05 revisi.
 MAKS_WAKTU_MAKAN = 5
+
+
+def meal_shares(n):
+    """Andil per waktu makan untuk ``n`` kali makan; selalu berjumlah 1,0."""
+    return MEAL_SHARES[min(max(int(n), 1), MAKS_WAKTU_MAKAN)]
+
+
+def default_meal_slots(n):
+    return DEFAULT_MEAL_SLOTS[min(max(int(n), 1), MAKS_WAKTU_MAKAN)]
 
 # Andil tiap slot terhadap target satu porsi (energi, protein, biaya).
 SLOT_SHARE = {
@@ -166,8 +195,8 @@ def target_keluarga(snapshot, profil):
     energi = sum(r['energi'] for r in rows)
     protein = sum(r['protein'] for r in rows)
     faktor = sum(r['faktor_porsi'] for r in rows)
-    # FR-05 revisi: semua waktu makan penuh. Target energi & anggaran dibagi
-    # sesuai porsi tiap waktu makan (SHARE_WAKTU_MAKAN), bukan selingan 35%.
+    # FR-05 revisi: target energi, protein, mikro, dan anggaran dibagi ke tiap
+    # waktu makan memakai MEAL_SHARES (bukan rata), lalu diskalakan faktor porsi.
     n_utama = min(max(profil.meals_per_day, 1), MAKS_WAKTU_MAKAN)
     n_selingan = 0
     porsi_utama = faktor * n_utama
@@ -181,7 +210,8 @@ def target_keluarga(snapshot, profil):
     bagi = porsi_utama or 1.0
     return {
         'anggota': rows, 'energi': energi, 'protein': protein, 'faktor': faktor,
-        'n_utama': n_utama, 'n_selingan': n_selingan,
+        'n_utama': n_utama, 'n_selingan': n_selingan, 'mikro': mikro,
+        'andil': meal_shares(n_utama),
         'porsi_utama': round(bagi, 2),
         'anggaran_per_porsi': round(profil.daily_budget / total_porsi) if total_porsi else 0,
         'energi_per_porsi': energi / bagi if bagi else 0,

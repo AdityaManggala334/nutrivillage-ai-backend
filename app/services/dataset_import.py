@@ -30,7 +30,7 @@ from app.models.enums import (
     IngredientCategory, LocalLevel, MbgSlot, PriceSourceType, PriceStatus,
     RecipeCategory, SeasonalStatus,
 )
-from app.models.price import Price
+from app.models.price import Price, PriceHistory
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.planning import SystemConfig
 from app.models.standard import AnthropometryStandard, NutritionStandard
@@ -92,10 +92,12 @@ class DatasetTidakValid(ValueError):
 class HasilImpor:
     dibuat: dict = field(default_factory=dict)
     diperbarui: dict = field(default_factory=dict)
+    dihapus: dict = field(default_factory=dict)
     error: list[dict] = field(default_factory=list)
 
     def ringkas(self) -> dict:
         return {'dibuat': self.dibuat, 'diperbarui': self.diperbarui,
+                'dihapus': self.dihapus,
                 'jumlah_error': len(self.error), 'error': self.error[:50]}
 
 
@@ -141,7 +143,8 @@ BERKAS_TERKENAL = ('01_menu_komponen', '02_bahan_gizi', '03_resep_komponen',
 #: Batas unggah. Ditegakkan di backend (bukan hanya di layar) karena aplikasi
 #: mobile memanggil FastAPI langsung tanpa melewati lapisan Next.js.
 MAKS_BERKAS_MB = 10
-MAKS_BERKAS_JUMLAH = 7
+# 01-07 + 10_antropometri (z-score anak) = 8 berkas yang dibaca mesin.
+MAKS_BERKAS_JUMLAH = 8
 
 #: Wilayah yang boleh dipakai impor. Nama lain ditolak supaya tabel `regions`
 #: tidak tumbuh berisi "Lainnya", "tangerang", atau salah ketik.
@@ -279,7 +282,100 @@ def _siapkan_bahan(db: Session, registry, alergen_rows, hasil: HasilImpor):
             hasil.dibuat['gizi'] = hasil.dibuat.get('gizi', 0) + 1
         else:
             hasil.diperbarui['gizi'] = hasil.diperbarui.get('gizi', 0) + 1
-    return {i.code: i for i in db.scalars(select(Ingredient)) if i.code}
+    # Hanya bahan dari CSV; bahan seed lama dibiarkan untuk _gabung_bahan_ganda.
+    return {i.code: i for i in db.scalars(select(Ingredient))
+            if i.code in registry}
+
+
+def _gabung_bahan_ganda(db, bahan, hasil):
+    """Satukan bahan lama (mis. seed manual) yang namanya sama dengan CSV.
+
+    Tanpa ini database punya dua bahan untuk "Bawang merah": resep memakai
+    yang lama tanpa harga approved, sementara harga CSV menempel di yang baru.
+    Akibatnya mesin memperingatkan bahan tanpa harga padahal CSV lengkap.
+    """
+    kanonik = {b.id for b in bahan.values()}
+
+    def kata(nama):
+        return set(_normal(str(nama).split(',')[0]).split())
+
+    kanonik_list = list(bahan.values())
+    for lama in list(db.scalars(select(Ingredient))):
+        if lama.id in kanonik:
+            continue
+        kunci_lama = _normal(lama.name.split(',')[0])
+        calon = [b for b in kanonik_list
+                 if _normal(b.name.split(',')[0]) == kunci_lama]
+        if not calon:
+            # Nama seed lebih pendek ("Beras", "Telur"); ambil kandidat yang
+            # memuat semua kata lama, dan hanya bila pemenangnya tunggal.
+            calon = [b for b in kanonik_list
+                     if kata(lama.name) and kata(lama.name) <= kata(b.name)]
+            if calon:
+                pendek = min(len(kata(b.name)) for b in calon)
+                calon = [b for b in calon if len(kata(b.name)) == pendek]
+        if len(calon) != 1:
+            continue
+        tujuan = calon[0]
+        for ri in list(db.scalars(select(RecipeIngredient).where(
+                RecipeIngredient.ingredient_id == lama.id))):
+            bentrok = db.scalar(select(RecipeIngredient).where(
+                RecipeIngredient.recipe_id == ri.recipe_id,
+                RecipeIngredient.ingredient_id == tujuan.id))
+            if bentrok is not None:
+                db.delete(ri)
+            else:
+                ri.ingredient_id = tujuan.id
+        for p in db.scalars(select(Price).where(Price.ingredient_id == lama.id)):
+            p.ingredient_id = tujuan.id
+        for p in db.scalars(select(PriceHistory).where(
+                PriceHistory.ingredient_id == lama.id)):
+            p.ingredient_id = tujuan.id
+        for s in list(db.scalars(select(SeasonalAvailability).where(
+                SeasonalAvailability.ingredient_id == lama.id))):
+            ada = db.scalar(select(SeasonalAvailability).where(
+                SeasonalAvailability.ingredient_id == tujuan.id,
+                SeasonalAvailability.month == s.month))
+            if ada is not None:
+                db.delete(s)
+            else:
+                s.ingredient_id = tujuan.id
+        for a in list(db.scalars(select(LocalAvailability).where(
+                LocalAvailability.ingredient_id == lama.id))):
+            ada = db.scalar(select(LocalAvailability).where(
+                LocalAvailability.ingredient_id == tujuan.id,
+                LocalAvailability.region_id == a.region_id))
+            if ada is not None:
+                db.delete(a)
+            else:
+                a.ingredient_id = tujuan.id
+        nz = db.scalar(select(NutritionFact).where(
+            NutritionFact.ingredient_id == lama.id))
+        if nz is not None:
+            db.delete(nz)
+        db.delete(lama)
+        hasil.dihapus['bahan'] = hasil.dihapus.get('bahan', 0) + 1
+    db.flush()
+
+
+def _hapus_menu_ganda(db, menu_rows, hasil):
+    """Hapus menu seed lama yang bukan bagian dataset CSV.
+
+    Menu buatan admin (code NULL) tidak disentuh. Seed lama memakai awalan
+    `resep-`; tanpa dibuang, menu ganda ikut masuk kandidat mesin dan
+    menimbulkan peringatan harga palsu.
+    """
+    kode = {(r.get('menu_id') or '').strip() for r in menu_rows}
+    nama = {_normal((r.get('nama_menu') or '').strip()) for r in menu_rows if r.get('nama_menu')}
+    for resep in list(db.scalars(select(Recipe))):
+        kode_lama = resep.code or ''
+        if kode_lama in kode:
+            continue
+        if not (kode_lama.startswith('resep-') or _normal(resep.name) in nama):
+            continue
+        db.delete(resep)
+        hasil.dihapus['menu'] = hasil.dihapus.get('menu', 0) + 1
+    db.flush()
 
 
 def _siapkan_harga(db, harga_rows, bahan, region, hasil):
@@ -514,8 +610,10 @@ def impor_teks(db: Session, isi: dict[str, str], region_nama: str = 'Kabupaten M
     resep_rows = _baris(isi.get('03_resep_komponen', ''))
     registry = _registry_bahan(gizi_rows, resep_rows, harga_rows)
     bahan = _siapkan_bahan(db, registry, _baris(isi.get('07_alergen_bahan', '')), hasil)
-    _siapkan_menu(db, _baris(isi.get('01_menu_komponen', '')), gizi_rows,
-                  resep_rows, bahan, hasil)
+    _gabung_bahan_ganda(db, bahan, hasil)
+    menu_rows = _baris(isi.get('01_menu_komponen', ''))
+    _siapkan_menu(db, menu_rows, gizi_rows, resep_rows, bahan, hasil)
+    _hapus_menu_ganda(db, menu_rows, hasil)
     _siapkan_harga(db, harga_rows, bahan, region, hasil)
     _siapkan_musim(db, _baris(isi.get('06_musim_pangan', '')), bahan, hasil)
     _siapkan_lokal(db, harga_rows, bahan, region, hasil)
@@ -538,4 +636,24 @@ def impor_teks(db: Session, isi: dict[str, str], region_nama: str = 'Kabupaten M
         laporan['gizi_menu_dihitung'] = hitung_gizi_semua_menu(db)
     laporan['jumlah_menu'] = db.query(Recipe).count()
     laporan['jumlah_bahan'] = db.query(Ingredient).count()
+    laporan['harga'] = _laporan_harga(db)
     return laporan
+
+
+def _laporan_harga(db) -> dict:
+    """Ringkasan harga setelah impor: approved dipakai mesin, pending antre."""
+    per_status = {s.value: db.query(Price).filter(Price.status == s).count()
+                  for s in PriceStatus}
+    dipakai = {ri.ingredient_id for ri in db.scalars(select(RecipeIngredient))
+               if ri.ingredient_id}
+    disetujui = {p.ingredient_id for p in db.scalars(
+        select(Price).where(Price.status == PriceStatus.APPROVED))}
+    tanpa = sorted(dipakai - disetujui)
+    nama = {i.id: i.name for i in db.scalars(select(Ingredient))}
+    return {
+        'approved': per_status.get('approved', 0),
+        'pending': per_status.get('pending', 0),
+        'rejected': per_status.get('rejected', 0),
+        'bahan_tanpa_harga': len(tanpa),
+        'contoh_bahan_tanpa_harga': [nama.get(i, str(i)) for i in tanpa[:10]],
+    }
